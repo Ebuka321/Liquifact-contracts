@@ -425,7 +425,7 @@ fn test_sweep_terminal_dust_happy_path() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
-    let token = crate::test::install_stellar_asset_token(&env);
+    let token = crate::tests::install_stellar_asset_token(&env);
     let treasury = Address::generate(&env);
 
     client.init(
@@ -485,7 +485,7 @@ fn test_sweep_no_balance() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
-    let token = crate::test::install_stellar_asset_token(&env);
+    let token = crate::tests::install_stellar_asset_token(&env);
     let treasury = Address::generate(&env);
     client.init(
         &admin,

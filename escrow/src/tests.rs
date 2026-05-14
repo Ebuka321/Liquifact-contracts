@@ -1,3 +1,11 @@
+#![allow(
+    unused_imports,
+    unused_variables,
+    dead_code,
+    clippy::needless_borrow,
+    clippy::len_zero,
+    clippy::explicit_counter_loop
+)]
 #[allow(unused_imports)]
 use super::{
     DataKey, FundingTargetUpdated, LegalHoldChanged, LiquifactEscrow, LiquifactEscrowClient,

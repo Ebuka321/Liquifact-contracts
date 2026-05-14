@@ -75,7 +75,10 @@ fn test_legal_hold_midflow_blocks_and_resumes_with_ordered_events() {
     // Hold off: funding resumes and reaches funded state.
     client.clear_legal_hold();
     let escrow = client.fund(&investor_b, &(TARGET - first_leg));
-    assert_eq!(escrow.status, 1, "escrow should reach funded after hold clears");
+    assert_eq!(
+        escrow.status, 1,
+        "escrow should reach funded after hold clears"
+    );
 
     // Hold on again: release/settlement action is blocked.
     client.set_legal_hold(&true);
@@ -689,7 +692,10 @@ fn test_legal_hold_midflow_blocks_then_resumes_with_ordered_events() {
     let fund_blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.fund(&investor, &1_000i128);
     }));
-    assert!(fund_blocked.is_err(), "fund must be blocked while hold is active");
+    assert!(
+        fund_blocked.is_err(),
+        "fund must be blocked while hold is active"
+    );
 
     let settle_blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.settle();
@@ -707,7 +713,10 @@ fn test_legal_hold_midflow_blocks_then_resumes_with_ordered_events() {
     assert_eq!(funded_state.status, 1, "escrow should become funded");
 
     let settled_state = client.settle();
-    assert_eq!(settled_state.status, 2, "escrow should settle after hold is cleared");
+    assert_eq!(
+        settled_state.status, 2,
+        "escrow should settle after hold is cleared"
+    );
 
     // Assert legal-hold event ordering.
     let contract_events = env.events().all();
@@ -738,7 +747,7 @@ fn test_legal_hold_midflow_blocks_then_resumes_with_ordered_events() {
         }
         idx += 1;
     }
-    
+
     let hold_on_pos = hold_on_pos.expect("expected legal hold enable event");
     let hold_off_pos = hold_off_pos.expect("expected legal hold clear event");
 

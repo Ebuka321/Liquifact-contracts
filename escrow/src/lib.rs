@@ -85,7 +85,6 @@
 //! written; see `docs/escrow-pro-rata.md` for the authoritative pro-rata payout math and rounding rules.
 //! Off-chain share for an investor is `get_contribution(addr) / snapshot.total_principal`.
 
-#![no_std]
 #![allow(clippy::too_many_arguments)]
 
 #[cfg(test)]
@@ -1448,6 +1447,6 @@ impl LiquifactEscrow {
 }
 
 #[cfg(test)]
-mod test;
+mod test_allowlist_tests;
 #[cfg(test)]
-mod test_allowlist;
+mod tests;

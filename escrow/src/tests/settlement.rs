@@ -1035,7 +1035,10 @@ fn funding_snapshot_survives_settle() {
     let snapshot_after = client
         .get_funding_close_snapshot()
         .expect("snapshot must persist after settle");
-    assert_eq!(snapshot_before.total_principal, snapshot_after.total_principal);
+    assert_eq!(
+        snapshot_before.total_principal,
+        snapshot_after.total_principal
+    );
 }
 
 // ── is_investor_claimed: idempotent read behavior & cross-investor isolation ──

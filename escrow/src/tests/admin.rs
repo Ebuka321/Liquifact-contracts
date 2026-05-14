@@ -667,8 +667,8 @@ fn test_update_funding_target_negative_panics() {
 /// the contract stores and compares them as raw `u64` seconds.
 #[test]
 fn test_update_maturity_event_fields() {
-    use soroban_sdk::testutils::Events as _;
     use crate::MaturityUpdatedEvent;
+    use soroban_sdk::testutils::Events as _;
 
     let env = Env::default();
     env.mock_all_auths();
@@ -769,7 +769,7 @@ fn test_update_maturity_fails_when_settled() {
         &None,
     );
     client.fund(&investor, &5_000i128); // status → 1
-    client.settle();                    // status → 2
+    client.settle(); // status → 2
     client.update_maturity(&2000u64);
 }
 
@@ -802,7 +802,7 @@ fn test_update_maturity_fails_when_withdrawn() {
         &None,
     );
     client.fund(&investor, &5_000i128); // status → 1
-    client.withdraw();                  // status → 3
+    client.withdraw(); // status → 3
     client.update_maturity(&2000u64);
 }
 
