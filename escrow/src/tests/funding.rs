@@ -2017,3 +2017,307 @@ fn test_sweep_terminal_dust_allowed_in_cancelled_state() {
     assert_eq!(swept, 1i128);
     assert_eq!(token.token.balance(&treasury), 1i128);
 }
+
+// ─── Commitment first-deposit-only invariant (issue #260) ────────────────────
+
+/// After `fund_with_commitment(lock_secs > 0)`, a subsequent `fund()` call from the
+/// same investor must preserve **both** `InvestorEffectiveYield` (tier rate) and
+/// `InvestorClaimNotBefore` (absolute timestamp) unchanged.
+#[test]
+fn test_commitment_claim_lock_preserved_after_follow_on_fund() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let inv = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    let mut tiers = SorobanVec::new(&env);
+    tiers.push_back(YieldTier {
+        min_lock_secs: 100,
+        yield_bps: 950,
+    });
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CLK001"),
+        &sme,
+        &10_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &Some(tiers),
+        &None,
+        &None,
+        &None,
+    );
+
+    // Set ledger timestamp to a known value so claim_nb is deterministic.
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000u64);
+
+    // First deposit: tier at 100 s → effective yield = 950 bps, lock until 1_000_100.
+    client.fund_with_commitment(&inv, &3_000i128, &100u64);
+    let yield_after_first = client.get_investor_yield_bps(&inv);
+    let lock_after_first = client.get_investor_claim_not_before(&inv);
+    assert_eq!(yield_after_first, 950, "tier yield not selected correctly");
+    assert_eq!(lock_after_first, 1_000_100u64, "claim lock not set correctly");
+
+    // Follow-on deposit using fund() — must succeed and preserve both values.
+    client.fund(&inv, &3_000i128);
+    assert_eq!(
+        client.get_investor_yield_bps(&inv),
+        yield_after_first,
+        "effective yield must be immutable after follow-on fund()"
+    );
+    assert_eq!(
+        client.get_investor_claim_not_before(&inv),
+        lock_after_first,
+        "InvestorClaimNotBefore must be immutable after follow-on fund()"
+    );
+}
+
+/// Tier and claim-lock selection must remain immutable across **multiple** consecutive
+/// follow-on `fund()` calls from the same investor.
+#[test]
+fn test_commitment_invariant_across_multiple_follow_on_funds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let inv = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    let mut tiers = SorobanVec::new(&env);
+    tiers.push_back(YieldTier {
+        min_lock_secs: 50,
+        yield_bps: 900,
+    });
+    tiers.push_back(YieldTier {
+        min_lock_secs: 200,
+        yield_bps: 1100,
+    });
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CLK002"),
+        &sme,
+        &50_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &Some(tiers),
+        &None,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| l.timestamp = 2_000_000u64);
+
+    // First deposit: 200 s commitment → top tier (1100 bps), lock until 2_000_200.
+    client.fund_with_commitment(&inv, &5_000i128, &200u64);
+    let expected_yield = client.get_investor_yield_bps(&inv);
+    let expected_lock = client.get_investor_claim_not_before(&inv);
+    assert_eq!(expected_yield, 1100);
+    assert_eq!(expected_lock, 2_000_200u64);
+
+    // Three follow-on fund() calls — invariant must hold after each.
+    for round in 1u32..=3 {
+        client.fund(&inv, &1_000i128);
+        assert_eq!(
+            client.get_investor_yield_bps(&inv),
+            expected_yield,
+            "yield changed on follow-on fund round {round}"
+        );
+        assert_eq!(
+            client.get_investor_claim_not_before(&inv),
+            expected_lock,
+            "claim lock changed on follow-on fund round {round}"
+        );
+    }
+}
+
+/// `fund_with_commitment(lock_secs = 0)` must assign base yield and leave
+/// `InvestorClaimNotBefore` at zero. A subsequent `fund()` call must keep both
+/// at their zero / base values — no claim gate is imposed.
+#[test]
+fn test_commitment_zero_lock_follow_on_fund_no_claim_gate() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let inv = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    let mut tiers = SorobanVec::new(&env);
+    tiers.push_back(YieldTier {
+        min_lock_secs: 100,
+        yield_bps: 950,
+    });
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CLK003"),
+        &sme,
+        &10_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &Some(tiers),
+        &None,
+        &None,
+        &None,
+    );
+
+    // Zero lock → base yield only, no claim gate.
+    client.fund_with_commitment(&inv, &4_000i128, &0u64);
+    assert_eq!(client.get_investor_yield_bps(&inv), 800, "should get base yield for zero lock");
+    assert_eq!(client.get_investor_claim_not_before(&inv), 0u64, "no claim gate for zero lock");
+
+    // Follow-on fund() must preserve both zero-valued guards.
+    client.fund(&inv, &4_000i128);
+    assert_eq!(
+        client.get_investor_yield_bps(&inv),
+        800,
+        "yield must remain at base after follow-on fund() with zero-lock commitment"
+    );
+    assert_eq!(
+        client.get_investor_claim_not_before(&inv),
+        0u64,
+        "InvestorClaimNotBefore must stay 0 after follow-on fund() with zero-lock commitment"
+    );
+}
+
+/// A second `fund_with_commitment` from the same investor (who already has a
+/// non-zero contribution) must panic with the documented error message, regardless
+/// of whether a tier table is configured.
+#[test]
+#[should_panic(expected = "Additional principal after a tiered first deposit")]
+fn test_second_fund_with_commitment_panics_without_tier_table() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let inv = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    // No tier table: base-only escrow.
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CLK004"),
+        &sme,
+        &10_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    client.fund_with_commitment(&inv, &3_000i128, &0u64);
+    // Second call must trap.
+    client.fund_with_commitment(&inv, &3_000i128, &0u64);
+}
+
+/// After a plain `fund()` first deposit, calling `fund_with_commitment` on the same
+/// investor must panic — the tier/lock selection window is permanently closed.
+/// This is the "inverse" direction of the state-machine rule.
+#[test]
+#[should_panic(expected = "Additional principal after a tiered first deposit")]
+fn test_fund_first_then_commitment_second_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let inv = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    let mut tiers = SorobanVec::new(&env);
+    tiers.push_back(YieldTier {
+        min_lock_secs: 50,
+        yield_bps: 900,
+    });
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CLK005"),
+        &sme,
+        &10_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &Some(tiers),
+        &None,
+        &None,
+        &None,
+    );
+
+    // First leg via fund() → establishes base-yield position.
+    client.fund(&inv, &3_000i128);
+    // Attempt to re-select tier via fund_with_commitment → must panic.
+    client.fund_with_commitment(&inv, &3_000i128, &100u64);
+}
+
+/// Verify that a plain `fund()` as first deposit sets the effective yield to the
+/// base rate and leaves `InvestorClaimNotBefore` at zero (no lock gate implied by
+/// the simple funding path).
+#[test]
+fn test_fund_first_deposit_sets_base_yield_and_no_claim_gate() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let inv = Address::generate(&env);
+    let (tok, tre) = free_addresses(&env);
+
+    let mut tiers = SorobanVec::new(&env);
+    tiers.push_back(YieldTier {
+        min_lock_secs: 100,
+        yield_bps: 950,
+    });
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "CLK006"),
+        &sme,
+        &10_000i128,
+        &800i64,
+        &0u64,
+        &tok,
+        &None,
+        &tre,
+        &Some(tiers),
+        &None,
+        &None,
+        &None,
+    );
+
+    client.fund(&inv, &5_000i128);
+    assert_eq!(
+        client.get_investor_yield_bps(&inv),
+        800,
+        "fund() must assign base yield even when tier table is present"
+    );
+    assert_eq!(
+        client.get_investor_claim_not_before(&inv),
+        0u64,
+        "fund() must not impose a claim gate"
+    );
+}

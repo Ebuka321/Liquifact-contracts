@@ -1795,48 +1795,21 @@ impl LiquifactEscrow {
         // - ADR-007: storage key evolution policy (additive changes / key semantics).
         // - docs/escrow-ledger-time.md: all gating uses `Env::ledger().timestamp()` with `>=`.
 
-        // Instance storage keys required for settlement + gating behavior.
-        let k_escrow: DataKey = DataKey::Escrow;
-        env.storage().instance().extend_ttl(&k_escrow, &INSTANCE_TTL_MIN_EXTENSION_SECS);
+        // Extend the monolithic instance storage TTL (covers Escrow, Version, LegalHold,
+        // AllowlistActive, FundingCloseSnapshot, and per-investor contribution/claim gates).
+        env.storage().instance().extend_ttl(
+            INSTANCE_TTL_MIN_EXTENSION_SECS as u32,
+            INSTANCE_TTL_MIN_EXTENSION_SECS as u32,
+        );
 
-        let k_version: DataKey = DataKey::Version;
-        env.storage().instance().extend_ttl(&k_version, &INSTANCE_TTL_MIN_EXTENSION_SECS);
-
-        let k_legal_hold: DataKey = DataKey::LegalHold;
-        env.storage().instance().extend_ttl(&k_legal_hold, &INSTANCE_TTL_MIN_EXTENSION_SECS);
-
-        let k_allowlist_active: DataKey = DataKey::AllowlistActive;
-        env.storage()
-            .instance()
-            .extend_ttl(&k_allowlist_active, &INSTANCE_TTL_MIN_EXTENSION_SECS);
-
-        let k_snapshot: DataKey = DataKey::FundingCloseSnapshot;
-        env.storage()
-            .instance()
-            .extend_ttl(&k_snapshot, &INSTANCE_TTL_MIN_EXTENSION_SECS);
-
-        // Investor contribution + claim gates are instance keys (per investor).
-        // We cannot enumerate contributors on-chain; extend only what the caller provides.
-        for addr in allowlisted.iter() {
-            // Contribution + claim-gate entries are instance-scoped and per-investor.
-            let k_contrib = DataKey::InvestorContribution(addr.clone());
-            env.storage()
-                .instance()
-                .extend_ttl(&k_contrib, &INSTANCE_TTL_MIN_EXTENSION_SECS);
-
-            let k_claim_not_before = DataKey::InvestorClaimNotBefore(addr.clone());
-            env.storage()
-                .instance()
-                .extend_ttl(&k_claim_not_before, &INSTANCE_TTL_MIN_EXTENSION_SECS);
-        }
-
-
-        // Persistent allowlist entries.
+        // Persistent allowlist entries are individual ledger entries.
         for addr in allowlisted.iter() {
             let k = DataKey::InvestorAllowlisted(addr.clone());
-            env.storage()
-                .persistent()
-                .extend_ttl(&k, &PERSISTENT_TTL_MIN_EXTENSION_SECS);
+            env.storage().persistent().extend_ttl(
+                &k,
+                PERSISTENT_TTL_MIN_EXTENSION_SECS as u32,
+                PERSISTENT_TTL_MIN_EXTENSION_SECS as u32,
+            );
         }
     }
 

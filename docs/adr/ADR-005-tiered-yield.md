@@ -37,3 +37,21 @@ Some invoice products offer higher yield to investors who commit to a longer loc
 
 - **Mutable tier selection:** allows gaming; immutability after first deposit is the fairness guarantee.
 - **On-chain coupon calculation:** requires token custody and floating-point math; both are out of scope for this contract version.
+
+## Test coverage
+
+The state-machine rules above are verified in `escrow/src/tests/funding.rs`:
+
+| Test | Rule verified |
+|---|---|
+| `test_fund_with_commitment_twice_panics` | Second `fund_with_commitment` from same investor panics |
+| `test_fund_then_fund_with_commitment_panics` | `fund → fund_with_commitment` (inverse) panics |
+| `test_fund_first_then_commitment_second_panics` | Same inverse rule, with tier table present |
+| `test_second_fund_with_commitment_panics_without_tier_table` | Second `fund_with_commitment` panics on base-only escrow |
+| `test_tiered_yield_and_follow_on_fund` | Follow-on `fund()` succeeds and preserves tier yield |
+| `test_commitment_claim_lock_preserved_after_follow_on_fund` | Follow-on `fund()` preserves `InvestorClaimNotBefore` |
+| `test_commitment_invariant_across_multiple_follow_on_funds` | Invariant holds across 3 consecutive follow-on `fund()` calls |
+| `test_fund_with_commitment_zero_lock_behaves_as_fund` | `committed_lock_secs == 0` → base yield, `InvestorClaimNotBefore == 0` |
+| `test_commitment_zero_lock_follow_on_fund_no_claim_gate` | Follow-on `fund()` after zero-lock preserves both zero guards |
+| `test_fund_first_deposit_sets_base_yield_and_no_claim_gate` | Plain `fund()` first deposit → base yield, no claim gate |
+

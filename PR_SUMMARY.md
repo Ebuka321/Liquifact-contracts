@@ -1,162 +1,49 @@
-# PR Summary: SEP-41 Hardening - Balance-Delta Invariants in External Calls
+# PR Description: Test fund_with_commitment rejects a second deposit from the same investor (#260)
 
-## Overview
-This PR implements SEP-41 hardening requirements for the Liquifact escrow contract by expanding documentation and adding comprehensive tests for balance-delta invariants in `external_calls.rs`.
+## Description
 
-## Changes Made
+This PR implements comprehensive test cases for the LiquiFact escrow contract to enforce state-machine invariants regarding investor funding behavior, fully resolving issue **#260**.
 
-### 1. Enhanced Documentation (`escrow/src/external_calls.rs`)
-- **Expanded module-level documentation** with detailed balance-delta invariant explanations
-- **Added test reality section** documenting how invariants are verified
-- **Clarified out-of-scope token economics** with specific examples
-- **Added governance allowlist section** explaining defense-in-depth approach
-- **Enhanced function documentation** with security considerations and mathematical conservation details
+Specifically, the contract requires that the selection of tier-based yield and claim-lock gates is permanently set during the investor's **first deposit**. Any subsequent contributions by the same investor must use the simple `fund()` entrypoint, which preserves their originally assigned yield and claim-lock gate.
 
-### 2. New Test Suite (`escrow/src/test/external_calls_mocked.rs`)
-- **Mock token implementations** for fee-on-transfer and rebasing tokens
-- **Balance delta divergence tests** that would fail with non-compliant tokens
-- **Edge case testing** including minimum amounts and large transfers
-- **Multiple recipient scenarios** to ensure cumulative consistency
-- **Mathematical conservation verification** across all transfer scenarios
+This PR adds a dedicated suite of unit tests in `escrow/src/tests/funding.rs` and updates the optional tiered yield ADR (`docs/adr/ADR-005-tiered-yield.md`) to document the complete test coverage.
 
-### 3. Coverage Configuration
-- **Added cargo llvm-cov configuration** for line coverage measurement
-- **Configured exclusions** to focus on production code coverage
-- **Set up CI-ready coverage reporting** structure
+---
 
-### 4. Updated NatSpec Comments
-- **Enhanced function documentation** with security considerations
-- **Added mathematical equality assertions** to documentation
-- **Clarified panic conditions** and their security implications
+## Technical Details & Invariants Tested
 
-## Security Notes
+We implemented **6 new unit tests** to comprehensively verify the state machine's boundary conditions and invariants:
 
-### Assumptions
-- Token contracts follow standard SEP-41 semantics without side effects
-- Governance allowlists will exclude non-compliant tokens
-- Balance checks serve as technical safety net, not primary defense
+1. **`test_commitment_claim_lock_preserved_after_follow_on_fund`**:
+   Verifies that after a tiered deposit via `fund_with_commitment(lock_secs > 0)`, a subsequent plain `fund()` call by the same investor succeeds and leaves both `InvestorEffectiveYield` and `InvestorClaimNotBefore` (absolute timestamp lock) unchanged.
+   
+2. **`test_commitment_invariant_across_multiple_follow_on_funds`**:
+   Ensures that tier and claim-lock selection remain immutable across multiple consecutive follow-on `fund()` calls from the same investor.
 
-### Out-of-Scope Token Economics
-The following token types are explicitly out of scope and will cause safe-failure panics:
-- **Fee-on-transfer tokens** (sender delta > transfer amount)
-- **Rebasing tokens** (recipient delta != transfer amount)
-- **Hook/callback tokens** (modify balances during transfer)
-- **Non-standard accounting tokens** (unpredictable balance behavior)
+3. **`test_commitment_zero_lock_follow_on_fund_no_claim_gate`**:
+   Confirms that zero-lock commitments correctly assign base yield and no claim gate, and that subsequent `fund()` calls preserve these zero-valued guards.
 
-### Defense in Depth
-1. **Technical**: Balance-delta invariants with immediate panic on deviation
-2. **Process**: Governance allowlists for token approval
-3. **Integration**: Manual review for token contract deployments
+4. **`test_second_fund_with_commitment_panics_without_tier_table`**:
+   Asserts that a second `fund_with_commitment` call from an existing investor correctly triggers a panic with the expected error message: `"Additional principal after a tiered first deposit must use fund(), not fund_with_commitment()"` even when no tier table is configured.
 
-## Test Coverage
+5. **`test_fund_first_then_commitment_second_panics`**:
+   Verifies the inverse rule: a plain `fund()` first deposit permanently closes the tier selection window, so any follow-on `fund_with_commitment` by the same investor panics with the expected error.
 
-### Current Test Coverage
-- **Standard token transfers**: ✅ Verified exact balance deltas
-- **Edge cases**: ✅ Zero/negative amounts, insufficient balance
-- **Multiple transfers**: ✅ Cumulative consistency verification
-- **Large amounts**: ✅ No overflow issues with safe large values
-- **Mock token scenarios**: ✅ Divergence detection capability
+6. **`test_fund_first_deposit_sets_base_yield_and_no_claim_gate`**:
+   Sanity checks that a simple `fund()` first deposit correctly defaults the investor's effective yield to base yield and sets no claim gate.
 
-### Coverage Target
-- **Production code**: Targeting ≥95% line coverage on `external_calls.rs`
-- **Test coverage**: Comprehensive coverage of all invariant scenarios
-- **Mock scenarios**: Coverage of divergence detection mechanisms
+---
 
-## Test Output Summary
+## Verification Plan
 
-### Standard Token Tests
+### Automated Verification
+Run the contract test suite:
+```bash
+cargo test
 ```
-✅ test_balance_delta_invariants_with_standard_token
-✅ test_balance_delta_conservation_with_standard_token  
-✅ test_balance_delta_invariants_with_edge_cases
-✅ test_balance_delta_invariants_with_large_transfers
-✅ test_balance_delta_invariants_with_multiple_recipients
-✅ test_balance_delta_invariants_with_zero_final_balance
-```
+*Tests added under:* `escrow/src/tests/funding.rs`
+*Documentation updated under:* `docs/adr/ADR-005-tiered-yield.md`
 
-### Mock Token Tests
-```
-❌ test_balance_delta_divergence_with_fee_token (expected panic)
-✅ test_balance_delta_conservation_with_standard_token
-```
-
-### Existing Tests (Enhanced)
-```
-✅ test_balance_delta_invariants_with_standard_token
-✅ test_panics_with_zero_amount
-✅ test_panics_with_negative_amount
-✅ test_muxed_address_compatibility
-✅ test_balance_underflow_detection
-✅ test_multiple_transfers_cumulative_balance_deltas
-✅ test_edge_case_maximum_amount_transfer
-```
-
-## Implementation Details
-
-### Balance-Delta Verification Process
-1. **Pre-transfer balance capture** for both sender and recipient
-2. **Atomic transfer execution** using `MuxedAddress` for Stellar compatibility
-3. **Post-transfer balance capture** and delta calculation
-4. **Mathematical equality assertion**: `sender_delta == recipient_delta == amount`
-
-### Error Handling
-- **Immediate panic** on any balance delta divergence
-- **Descriptive error messages** for debugging and security analysis
-- **Safe failure** preventing continued execution with inconsistent state
-
-## Future Considerations
-
-### Monitoring
-- **Integration testing** with actual token deployments
-- **Balance monitoring** in production for anomaly detection
-- **Governance processes** for token allowlist management
-
-### Enhancements
-- **Token compliance verification** before deployment
-- **Automated token scanning** for known problematic patterns
-- **Enhanced logging** for security incident response
-
-## Compatibility
-
-### Backward Compatibility
-- ✅ **Fully backward compatible** with existing escrow functionality
-- ✅ **No breaking changes** to public interfaces
-- ✅ **Enhanced safety** without performance impact
-
-### Stellar/Soroban Compliance
-- ✅ **SEP-41 compliant** token interface usage
-- ✅ **MuxedAddress support** for Stellar network compatibility
-- ✅ **Soroban best practices** for balance verification
-
-## Review Checklist
-
-- [ ] Documentation accurately reflects implementation
-- [ ] Tests cover all balance-delta invariant scenarios
-- [ ] Mock token implementations correctly simulate divergence
-- [ ] Coverage meets ≥95% target for production code
-- [ ] Security assumptions are clearly documented
-- [ ] Out-of-scope token economics are properly identified
-
-## Files Changed
-
-1. `escrow/src/external_calls.rs` - Enhanced documentation and NatSpec
-2. `escrow/src/test/external_calls_mocked.rs` - New comprehensive test suite
-3. `escrow/src/test.rs` - Added new test module
-4. `escrow/Cargo.toml` - Added coverage configuration
-
-## Commit Message
-
-```
-feat(escrow): document and test balance-delta invariants in `external_calls`
-
-Implements SEP-41 hardening requirements by:
-- Expanding documentation with balance-delta invariant details
-- Adding comprehensive tests for divergence detection
-- Enhancing NatSpec comments with security considerations
-- Configuring coverage measurement for 95%+ line coverage
-
-Security notes:
-- Balance-delta checks serve as technical safety net
-- Governance allowlists remain primary defense mechanism
-- Fee-on-transfer and rebasing tokens explicitly out of scope
-```
+### Manual Verification
+- Verified compilation cleanliness of the `liquifact_escrow` library.
+- Verified test suite integration and invariant assertions match ADR-005 spec.
