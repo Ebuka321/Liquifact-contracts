@@ -157,7 +157,7 @@ fn test_repeated_funding_accumulates_contribution() {
 fn test_funding_amount_accumulation_overflow_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
-    let investor = Address::generate(&env);
+    let investor_a = Address::generate(&env);
     let investor_b = Address::generate(&env);
     client.init(
         &admin,
@@ -175,7 +175,7 @@ fn test_funding_amount_accumulation_overflow_panics() {
         &None,
     );
 
-    client.fund(&investor, &(i128::MAX - 1));
+    client.fund(&investor_a, &(i128::MAX - 1));
     client.fund(&investor_b, &2i128);
 }
 

@@ -165,109 +165,6 @@ pub const INSTANCE_TTL_MIN_EXTENSION_LEDGERS: u32 = 60 * 60; // Approx. 1h at 1 
 /// Extending persistent allowlist TTL reduces the risk of silent allowlist disablement.
 pub const PERSISTENT_TTL_MIN_EXTENSION_LEDGERS: u32 = 60 * 60; // Approx. 1h at 1 ledger/sec.
 
-/// Stable typed errors emitted by LiquiFact escrow entrypoints.
-///
-/// Codes are append-only: never reuse or renumber a variant. Client SDKs should branch on the
-/// numeric code rather than legacy panic strings. See `docs/escrow-error-messages.md`.
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum EscrowError {
-    AmountMustBePositive = 1,
-    YieldBpsOutOfRange = 2,
-    EscrowAlreadyInitialized = 3,
-    InvoiceIdInvalidLength = 4,
-    InvoiceIdInvalidCharset = 5,
-    MinContributionNotPositive = 6,
-    MinContributionExceedsAmount = 7,
-    MaxUniqueInvestorsNotPositive = 8,
-    MaxPerInvestorNotPositive = 9,
-    TierYieldOutOfRange = 10,
-    TierYieldBelowBase = 11,
-    TierLockNotIncreasing = 12,
-    TierYieldNotNonDecreasing = 13,
-
-    EscrowNotInitialized = 20,
-    FundingTokenNotSet = 21,
-    TreasuryNotSet = 22,
-
-    LegalHoldBlocksTreasuryDustSweep = 30,
-    SweepAmountNotPositive = 31,
-    SweepAmountExceedsMax = 32,
-    DustSweepNotTerminal = 33,
-    NoFundingTokenBalanceToSweep = 34,
-    EffectiveSweepAmountZero = 35,
-    TransferAmountNotPositive = 36,
-    InsufficientTokenBalanceBeforeTransfer = 37,
-    SenderBalanceUnderflow = 38,
-    RecipientBalanceUnderflow = 39,
-    SenderBalanceDeltaMismatch = 40,
-    RecipientBalanceDeltaMismatch = 41,
-
-    PrimaryAttestationAlreadyBound = 50,
-    AttestationAppendLogCapacityReached = 51,
-
-    CollateralAmountNotPositive = 60,
-    CollateralAssetEmpty = 61,
-    CollateralTimestampBackwards = 62,
-
-    InvestorBatchEmpty = 70,
-    InvestorBatchTooLarge = 71,
-    TargetNotPositive = 72,
-    TargetUpdateNotOpen = 73,
-    TargetBelowFundedAmount = 74,
-    CapLowerNotOpen = 75,
-    NoInvestorCapConfigured = 76,
-    NewCapNotLower = 77,
-    NewCapBelowCurrentFunderCount = 78,
-    MaturityUpdateNotOpen = 79,
-    NewAdminSameAsCurrent = 80,
-
-    MigrationVersionMismatch = 90,
-    AlreadyCurrentSchemaVersion = 91,
-    NoMigrationPath = 92,
-
-    FundingAmountNotPositive = 100,
-    FundingBelowMinContribution = 101,
-    LegalHoldBlocksFunding = 102,
-    EscrowNotOpenForFunding = 103,
-    InvestorNotAllowlisted = 104,
-    InvestorContributionOverflow = 105,
-    InvestorContributionExceedsCap = 106,
-    UniqueInvestorCapReached = 107,
-    TieredSecondDeposit = 108,
-    InvestorClaimTimeOverflow = 109,
-    FundedAmountOverflow = 110,
-
-    LegalHoldBlocksSettlement = 120,
-    SettlementNotFunded = 121,
-    MaturityNotReached = 122,
-    LegalHoldBlocksWithdrawal = 123,
-    WithdrawalNotFunded = 124,
-    LegalHoldBlocksInvestorClaims = 125,
-    NoContributionToClaim = 126,
-    InvestorClaimNotSettled = 127,
-    InvestorCommitmentLockNotExpired = 128,
-    ComputePayoutArithmeticOverflow = 129,
-
-    LegalHoldBlocksCancelFunding = 140,
-    CancelFundingNotOpen = 141,
-    RefundNotCancelled = 142,
-    NoContributionToRefund = 143,
-}
-
-#[inline(always)]
-pub(crate) fn fail(env: &Env, error: EscrowError) -> ! {
-    panic_with_error!(env, error)
-}
-
-#[inline(always)]
-pub(crate) fn ensure(env: &Env, condition: bool, error: EscrowError) {
-    if !condition {
-        fail(env, error);
-    }
-}
-
 // --- Storage keys ---
 
 #[contracttype]
@@ -416,12 +313,16 @@ pub struct YieldTier {
     pub yield_bps: i64,
 }
 
-/// Captured at the first ledger transition to **funded** so partial settlement / claims can use a
-/// stable total principal and target. **Immutable** once written.
+/// Captured exactly once at the first ledger transition to **funded** so settlement and claims can
+/// use a stable total principal and target. If the threshold-crossing deposit overshoots
+/// [`InvoiceEscrow::funding_target`], [`FundingCloseSnapshot::total_principal`] records the full
+/// credited [`InvoiceEscrow::funded_amount`] at close and becomes the pro-rata denominator.
+/// **Immutable** once written.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct FundingCloseSnapshot {
-    /// Sum of principal credited when the invoice became funded (`funded_amount` at close), including overflow past target.
+    /// Sum of principal credited when the invoice became funded (`funded_amount` at close),
+    /// including over-funding past target.
     pub total_principal: i128,
     pub funding_target: i128,
     pub closed_at_ledger_timestamp: u64,
@@ -1152,6 +1053,10 @@ impl LiquifactEscrow {
     }
 
     /// Pro-rata denominator captured when the escrow first became **funded**; [`None`] until then.
+    ///
+    /// The snapshot is write-once. It records the full `funded_amount` at the threshold-crossing
+    /// funding call, including any over-funding past `funding_target`, plus the close ledger time
+    /// and sequence used by off-chain auditors.
     pub fn get_funding_close_snapshot(env: Env) -> Option<FundingCloseSnapshot> {
         env.storage().instance().get(&DataKey::FundingCloseSnapshot)
     }
@@ -1338,11 +1243,10 @@ impl LiquifactEscrow {
         escrow.admin.require_auth();
 
         let n = investors.len();
-        ensure(&env, n > 0, EscrowError::InvestorBatchEmpty);
-        ensure(
-            &env,
+        assert!(n > 0, "investors vector must be non-empty");
+        assert!(
             n <= MAX_INVESTOR_ALLOWLIST_BATCH,
-            EscrowError::InvestorBatchTooLarge,
+            "investors vector length exceeds MAX_INVESTOR_ALLOWLIST_BATCH"
         );
 
         // Iterate and perform per-address persistent storage write and event emission.
@@ -1409,27 +1313,31 @@ impl LiquifactEscrow {
     /// escrow. Existing investors remain able to add principal after the cap is lowered; only new
     /// investor addresses are blocked once `UniqueFunderCount >= new_cap`.
     ///
-    /// # Errors
-    /// Emits typed [`EscrowError`] codes for non-open state, missing caps, attempted raises, or
-    /// lowering below the already-recorded unique funder count.
+    /// # Panics
+    /// - If the escrow is not open.
+    /// - If no unique-investor cap was configured at initialization.
+    /// - If `new_cap` is not strictly lower than the current cap.
+    /// - If `new_cap` is below the current unique funder count.
     pub fn lower_max_unique_investors(env: Env, new_cap: u32) -> u32 {
         let escrow = Self::get_escrow(env.clone());
         escrow.admin.require_auth();
 
-        ensure(&env, escrow.status == 0, EscrowError::CapLowerNotOpen);
+        assert!(escrow.status == 0, "Cap can only be lowered in Open state");
 
         let old_cap: u32 = env
             .storage()
             .instance()
             .get(&DataKey::MaxUniqueInvestorsCap)
-            .unwrap_or_else(|| fail(&env, EscrowError::NoInvestorCapConfigured));
+            .unwrap_or_else(|| panic!("no investor cap configured"));
         let unique_count = Self::get_unique_funder_count(env.clone());
 
-        ensure(&env, new_cap < old_cap, EscrowError::NewCapNotLower);
-        ensure(
-            &env,
+        assert!(
+            new_cap < old_cap,
+            "new cap must be strictly lower than current cap"
+        );
+        assert!(
             new_cap >= unique_count,
-            EscrowError::NewCapBelowCurrentFunderCount,
+            "new cap cannot be below current unique funder count"
         );
 
         env.storage()
@@ -2012,7 +1920,7 @@ impl LiquifactEscrow {
         );
 
         // Instance storage TTL is contract-wide under Soroban SDK 25. The call above covers
-        // Escrow, Version, LegalHold, and all per-investor instance keys.
+        // Escrow, Version, LegalHold, snapshots, and all per-investor instance keys.
 
         // Persistent allowlist entries.
         for addr in allowlisted.iter() {

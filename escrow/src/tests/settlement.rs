@@ -699,7 +699,7 @@ fn settle_on_withdrawn_escrow_panics() {
 // HostError wraps contract panic; expected substring not matched in outer message.
 #[ignore = "HostError wraps contract panic; expected substring not matched"]
 #[test]
-#[should_panic]
+#[should_panic(expected = "dust sweep only in terminal states (settled, withdrawn, or cancelled)")]
 fn sweep_terminal_dust_before_terminal_state_panics() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1006,33 +1006,123 @@ fn claim_investor_payout_succeeds_after_settle() {
 ///
 /// This guards against the denominator being zeroed or mutated by the withdrawal
 /// path — off-chain accounting always needs a stable snapshot.
-// Calls fund_to_target after withdraw (status=3); fund panics. Logic error in body.
-#[ignore = "body calls fund_to_target after withdraw (status=3); panics without #[should_panic]"]
 #[test]
 fn funding_snapshot_survives_withdraw() {
     let env = Env::default();
+    env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
     default_init(&client, &env, &admin, &sme);
     fund_to_target(&client, &env);
 
-    let snapshot_before = client.get_funding_close_snapshot();
+    let snapshot_before = client
+        .get_funding_close_snapshot()
+        .expect("snapshot exists after fund close");
     client.withdraw();
-    let snapshot_after = client.get_funding_close_snapshot();
+    let snapshot_after = client
+        .get_funding_close_snapshot()
+        .expect("snapshot persists after withdraw");
 
     assert_eq!(
         snapshot_before, snapshot_after,
         "funding snapshot must be immutable after withdraw"
     );
-    fund_to_target(&client, &env);
-    let snapshot_before = client.get_funding_close_snapshot();
-    client.withdraw();
-    let snapshot_after = client.get_funding_close_snapshot();
     assert_eq!(
-        snapshot_after.as_ref().unwrap().total_principal,
-        TARGET,
+        snapshot_after.total_principal, TARGET,
         "snapshot total_principal must equal funded amount"
     );
-    assert_eq!(snapshot_before, snapshot_after);
+}
+
+/// The threshold-crossing deposit may overfund the target; the snapshot must capture the
+/// full credited funded_amount and the exact ledger timestamp/sequence at close.
+#[test]
+fn funding_close_snapshot_captures_overfunding_and_close_ledger() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let investor_a = Address::generate(&env);
+    let investor_b = Address::generate(&env);
+    let first_leg = TARGET - 10_000i128;
+    let crossing_leg = 25_000i128;
+    let close_total = first_leg + crossing_leg;
+
+    client.fund(&investor_a, &first_leg);
+    assert_eq!(
+        client.get_funding_close_snapshot(),
+        None,
+        "snapshot must be absent before funded transition"
+    );
+
+    let close_timestamp = 88_888u64;
+    let close_sequence = 777u32;
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = close_timestamp;
+        ledger.sequence_number = close_sequence;
+    });
+
+    client.fund(&investor_b, &crossing_leg);
+
+    let escrow = client.get_escrow();
+    let snapshot = client
+        .get_funding_close_snapshot()
+        .expect("snapshot must be written at funded transition");
+    assert_eq!(escrow.status, 1, "escrow must close as funded");
+    assert_eq!(escrow.funded_amount, close_total);
+    assert_eq!(
+        snapshot.total_principal, escrow.funded_amount,
+        "snapshot denominator must match overfunded close amount"
+    );
+    assert_eq!(snapshot.total_principal, TARGET + 15_000i128);
+    assert_eq!(snapshot.funding_target, TARGET);
+    assert_eq!(snapshot.closed_at_ledger_timestamp, close_timestamp);
+    assert_eq!(snapshot.closed_at_ledger_sequence, close_sequence);
+}
+
+/// After the funded transition, another same-ledger funding attempt must not overwrite the
+/// snapshot or mutate contributions. This guards the write-once denominator invariant even if a
+/// caller retries immediately after the close.
+#[test]
+fn funding_close_snapshot_not_overwritten_by_same_ledger_follow_on_attempt() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let closer = Address::generate(&env);
+    let late_investor = Address::generate(&env);
+    let close_amount = TARGET + 1_234i128;
+
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = 99_999;
+        ledger.sequence_number = 999;
+    });
+    client.fund(&closer, &close_amount);
+    let snapshot_at_close = client
+        .get_funding_close_snapshot()
+        .expect("snapshot exists after overfunded close");
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.fund(&late_investor, &1i128);
+    }));
+    assert!(
+        result.is_err(),
+        "funding after close must fail before it can overwrite snapshot"
+    );
+
+    let snapshot_after_attempt = client
+        .get_funding_close_snapshot()
+        .expect("snapshot remains present after rejected follow-on attempt");
+    assert_eq!(
+        snapshot_at_close, snapshot_after_attempt,
+        "snapshot must remain write-once after same-ledger follow-on attempt"
+    );
+    assert_eq!(client.get_escrow().funded_amount, close_amount);
+    assert_eq!(
+        client.get_contribution(&late_investor),
+        0,
+        "rejected follow-on funding must not create contribution state"
+    );
 }
 
 /// After `settle` the snapshot still matches what was recorded at fund-close.

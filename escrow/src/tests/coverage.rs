@@ -1,5 +1,5 @@
 use super::{free_addresses, setup};
-use crate::{DataKey, EscrowCloseSnapshot, EscrowError, EscrowSummary, YieldTier};
+use crate::{DataKey, EscrowCloseSnapshot, YieldTier};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, Env, Error, InvokeError, Vec as SorobanVec,
@@ -594,7 +594,7 @@ fn test_sweep_terminal_dust_happy_path() {
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "dust sweep only in terminal states (settled, withdrawn, or cancelled)")]
 fn test_sweep_not_terminal() {
     let env = Env::default();
     env.mock_all_auths();
