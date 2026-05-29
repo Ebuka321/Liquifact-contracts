@@ -1,5 +1,5 @@
 use super::{free_addresses, setup};
-use crate::{DataKey, EscrowCloseSnapshot, YieldTier};
+use crate::{DataKey, EscrowCloseSnapshot, EscrowError, YieldTier};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, Env, Error, InvokeError, Vec as SorobanVec,
@@ -430,7 +430,7 @@ fn test_all_getters() {
     assert_eq!(client.get_funding_token(), funding_token);
     assert_eq!(client.get_treasury(), treasury);
     assert_eq!(client.get_registry_ref(), Some(registry));
-    assert_eq!(client.get_version(), 5);
+    assert_eq!(client.get_version(), 6);
     assert!(!client.get_legal_hold());
     assert_eq!(client.get_min_contribution_floor(), 10);
     assert_eq!(client.get_max_unique_investors_cap(), Some(5));
@@ -594,7 +594,6 @@ fn test_sweep_terminal_dust_happy_path() {
 }
 
 #[test]
-#[should_panic(expected = "dust sweep only in terminal states (settled, withdrawn, or cancelled)")]
 fn test_sweep_not_terminal() {
     let env = Env::default();
     env.mock_all_auths();
@@ -616,7 +615,10 @@ fn test_sweep_not_terminal() {
         &None,
     );
 
-    client.sweep_terminal_dust(&10);
+    assert_contract_error(
+        client.try_sweep_terminal_dust(&10),
+        EscrowError::DustSweepNotTerminal,
+    );
 }
 
 #[test]
@@ -1374,7 +1376,7 @@ fn test_get_escrow_summary_happy_path() {
     assert_eq!(summary.funding_close_snapshot, EscrowCloseSnapshot::None);
     assert_eq!(summary.unique_funder_count, 0);
     assert!(!summary.is_allowlist_active);
-    assert_eq!(summary.schema_version, 5);
+    assert_eq!(summary.schema_version, 6);
 }
 
 #[test]
