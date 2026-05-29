@@ -264,8 +264,7 @@ fn test_claim_investor_twice_is_idempotent() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
 
@@ -298,8 +297,7 @@ fn test_claim_by_non_investor_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     // Escrow settled but stranger never funded
     let investor = Address::generate(&env);
     client.fund(&investor, &1_000i128);
@@ -327,8 +325,7 @@ fn test_clashing_investors_have_independent_claims() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv_a, &1_000i128);
     client.fund(&inv_b, &1_000i128);
     client.settle();
@@ -410,8 +407,7 @@ fn test_claim_blocked_until_commitment_ledger_time() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund_with_commitment(&inv, &1_000i128, &500u64);
     client.settle();
     client.claim_investor_payout(&inv);
@@ -439,8 +435,7 @@ fn test_claim_succeeds_after_commitment_and_settle() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund_with_commitment(&inv, &1_000i128, &100u64);
     client.settle();
     env.ledger().set_timestamp(150);
@@ -473,8 +468,7 @@ fn test_claim_gating_exact_timestamp() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let lock_duration = 500u64;
     client.fund_with_commitment(&inv, &1_000i128, &lock_duration);
@@ -521,8 +515,7 @@ fn test_claim_gating_with_multiple_investors() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund_with_commitment(&inv1, &1_000i128, &100u64); // Expiry 1100
     client.fund_with_commitment(&inv2, &1_000i128, &200u64); // Expiry 1200
@@ -564,8 +557,7 @@ fn test_cost_baseline_settle() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &TARGET);
     env.ledger().set_timestamp(1001);
     let settled = client.settle();
@@ -612,8 +604,7 @@ fn settle_with_maturity_zero_succeeds_immediately() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     assert!(
         !client.has_maturity_lock(),
@@ -655,8 +646,7 @@ fn settle_one_second_before_maturity_traps_and_preserves_state() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     fund_to_target(&client, &env);
     let snapshot_before = client.get_funding_close_snapshot();
@@ -707,8 +697,7 @@ fn settle_at_maturity_succeeds() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     assert!(
         client.has_maturity_lock(),
@@ -848,8 +837,7 @@ fn test_sweep_terminal_dust_after_settle_transfers_to_treasury() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let investor = Address::generate(&env);
     client.fund(&investor, &1_000i128);
     client.settle();
@@ -885,8 +873,7 @@ fn test_sweep_terminal_dust_after_withdraw_and_ledger_tick() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let investor = Address::generate(&env);
     client.fund(&investor, &1_000i128);
     client.withdraw();
@@ -920,8 +907,7 @@ fn test_sweep_rejected_when_open() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     client.claim_investor_payout(&investor);
@@ -947,8 +933,7 @@ fn test_sweep_blocked_under_legal_hold() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     client.set_legal_hold(&true);
@@ -976,8 +961,7 @@ fn test_sweep_rejects_amount_above_dust_cap() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     // status == 1 (funded), not settled — must panic
     client.claim_investor_payout(&investor);
@@ -1004,8 +988,7 @@ fn test_sweep_caps_at_contract_balance() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     client.claim_investor_payout(&stranger); // must panic — no contribution
@@ -1030,8 +1013,7 @@ fn test_sweep_requires_treasury_auth() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     fund_to_target(&client, &env);
     client.settle();
     token.stellar.mint(&escrow_id, &(MAX_DUST_SWEEP_AMOUNT + 1));
@@ -1234,8 +1216,7 @@ fn test_is_investor_claimed_false_before_any_claim() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     assert!(!client.is_investor_claimed(&investor));
@@ -1262,8 +1243,7 @@ fn test_is_investor_claimed_returns_false_for_unfunded_address() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     assert!(!client.is_investor_claimed(&stranger));
@@ -1288,8 +1268,7 @@ fn test_claim_marker_persists_after_claim() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     client.claim_investor_payout(&investor);
@@ -1317,8 +1296,7 @@ fn test_claim_marker_isolated_per_investor() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor_a, &1_000i128);
     client.fund(&investor_b, &1_000i128);
     client.settle();
@@ -1349,8 +1327,7 @@ fn test_claim_marker_all_investors_independent() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv_a, &1_000i128);
     client.fund(&inv_b, &1_000i128);
     client.fund(&inv_c, &1_000i128);
@@ -1499,8 +1476,7 @@ fn compute_payout_returns_zero_before_snapshot() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     // Deposit below target — no snapshot written yet.
     client.fund(&investor, &1i128);
     assert_eq!(client.compute_investor_payout(&investor), 0);
@@ -1534,8 +1510,7 @@ fn compute_payout_single_investor_full_target() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &10_000i128);
     client.settle();
 
@@ -1570,8 +1545,7 @@ fn compute_payout_two_equal_investors() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv_a, &1_000i128);
     client.fund(&inv_b, &1_000i128);
     client.settle();
@@ -1609,8 +1583,7 @@ fn compute_payout_aggregate_does_not_exceed_settle_pool() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv_a, &1i128);
     client.fund(&inv_b, &1i128);
     client.fund(&inv_c, &1i128);
@@ -1655,8 +1628,7 @@ fn compute_payout_floor_rounding_unequal_split() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv_a, &2i128);
     client.fund(&inv_b, &1i128);
     client.settle();
@@ -1691,8 +1663,7 @@ fn compute_payout_zero_yield_equals_principal() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv, &5_000i128);
     client.settle();
 
@@ -1726,8 +1697,7 @@ fn compute_payout_with_over_funding() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&inv_a, &750i128);
     client.fund(&inv_b, &750i128); // pushes total to 1_500 > target
     client.settle();
@@ -1768,8 +1738,7 @@ fn claim_dedupe_single_read_happy_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
 
@@ -1807,8 +1776,7 @@ fn claim_dedupe_stranger_still_rejected() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
 
@@ -1839,8 +1807,7 @@ fn claim_dedupe_hold_still_blocks() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.settle();
     client.set_legal_hold(&true);

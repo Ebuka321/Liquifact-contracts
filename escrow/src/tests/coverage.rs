@@ -63,8 +63,7 @@ fn typed_error_codes_cover_init_and_state_guards() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     assert_contract_error(
@@ -98,8 +97,7 @@ fn typed_error_codes_cover_allowlist_attestation_and_dust_guards() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.set_allowlist_active(&true);
     let investor = Address::generate(&env);
@@ -154,8 +152,7 @@ fn test_migrate_already_current() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.migrate(&5);
 }
@@ -181,8 +178,7 @@ fn test_migrate_no_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     env.as_contract(&client.address, || {
         env.storage().instance().set(&DataKey::Version, &0u32);
@@ -211,8 +207,7 @@ fn test_admin_handover_and_maturity_updates() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let updated = client.update_maturity(&200);
     assert_eq!(updated.maturity, 200);
@@ -249,8 +244,7 @@ fn test_update_maturity_not_open() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     client.fund(&investor, &100);
@@ -278,8 +272,7 @@ fn test_transfer_admin_same_admin() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.propose_admin(&admin);
 }
@@ -305,8 +298,7 @@ fn test_fund_during_legal_hold() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.set_legal_hold(&true);
     let investor = Address::generate(&env);
@@ -334,8 +326,7 @@ fn test_fund_below_floor() {
         &None,
         &Some(50),
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     client.fund(&investor, &10);
@@ -362,8 +353,7 @@ fn test_claim_not_settled() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     client.fund(&investor, &10);
@@ -391,8 +381,7 @@ fn test_claim_lock_not_expired() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     client.fund_with_commitment(&investor, &100, &3600);
@@ -424,8 +413,7 @@ fn test_all_getters() {
         &None,
         &Some(10),
         &Some(5),
-        &None,
-    );
+        &None, &None);
 
     assert_eq!(client.get_funding_token(), funding_token);
     assert_eq!(client.get_treasury(), treasury);
@@ -459,8 +447,7 @@ fn test_attestations_happy_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let hash1 = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
     let hash2 = soroban_sdk::BytesN::from_array(&env, &[2u8; 32]);
@@ -494,8 +481,7 @@ fn test_bind_primary_attestation_twice() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let hash = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
     client.bind_primary_attestation_hash(&hash);
@@ -522,8 +508,7 @@ fn test_unique_investors_cap() {
         &None,
         &None,
         &Some(2),
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &10);
     client.fund(&Address::generate(&env), &10);
@@ -551,8 +536,7 @@ fn test_unique_investors_cap_exceeded() {
         &None,
         &None,
         &Some(1),
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &10);
     client.fund(&Address::generate(&env), &10);
@@ -579,8 +563,7 @@ fn test_sweep_terminal_dust_happy_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &100);
     env.ledger().with_mut(|li| li.timestamp = 200);
@@ -613,8 +596,7 @@ fn test_sweep_not_terminal() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.sweep_terminal_dust(&10);
 }
@@ -640,8 +622,7 @@ fn test_sweep_no_balance() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &100);
     env.ledger().with_mut(|li| li.timestamp = 200);
@@ -669,8 +650,7 @@ fn test_withdraw_happy_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &100);
     assert_eq!(client.get_escrow().status, 1);
@@ -699,8 +679,7 @@ fn test_settle_too_early() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &100);
     client.settle();
@@ -725,8 +704,7 @@ fn test_update_funding_target_happy_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let updated = client.update_funding_target(&200);
     assert_eq!(updated.funding_target, 200);
@@ -752,8 +730,7 @@ fn test_update_funding_target_too_low() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &50);
     client.update_funding_target(&40);
@@ -778,8 +755,7 @@ fn test_sme_collateral_commitment() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let asset = soroban_sdk::Symbol::new(&env, "GOLD");
     let commitment = client.record_sme_collateral_commitment(&asset, &5000);
@@ -810,8 +786,7 @@ fn test_sme_collateral_empty_asset_rejected() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let empty_asset = soroban_sdk::Symbol::new(&env, "");
     client.record_sme_collateral_commitment(&empty_asset, &5000);
 }
@@ -836,8 +811,7 @@ fn test_sme_collateral_stale_timestamp_rejected() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let asset = soroban_sdk::Symbol::new(&env, "GOLD");
     client.record_sme_collateral_commitment(&asset, &5000);
@@ -867,8 +841,7 @@ fn test_sme_collateral_replacement_preserves_prior_amount() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let asset = soroban_sdk::Symbol::new(&env, "GOLD");
     let first = client.record_sme_collateral_commitment(&asset, &5000);
@@ -904,8 +877,7 @@ fn test_clear_legal_hold_convenience() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.set_legal_hold(&true);
     assert!(client.get_legal_hold());
@@ -932,8 +904,7 @@ fn test_claim_not_before_getter() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     client.fund_with_commitment(&investor, &50, &1000);
@@ -971,8 +942,7 @@ fn test_init_with_tiers() {
         &Some(tiers),
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     assert_eq!(client.get_escrow().yield_bps, 100); // Default yield
 }
 
@@ -996,8 +966,7 @@ fn test_sweep_too_much() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.fund(&Address::generate(&env), &100);
     env.ledger().with_mut(|li| li.timestamp = 200);
@@ -1026,8 +995,7 @@ fn test_withdraw_not_funded() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.withdraw();
 }
@@ -1052,8 +1020,7 @@ fn test_settle_not_funded() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.settle();
 }
@@ -1077,8 +1044,7 @@ fn test_fund_with_zero_commitment() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let investor = Address::generate(&env);
     client.fund_with_commitment(&investor, &50, &0);
@@ -1105,8 +1071,7 @@ fn test_update_target_invalid() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.update_funding_target(&0);
 }
@@ -1131,8 +1096,7 @@ fn test_init_yield_out_of_range() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 }
 
 #[test]
@@ -1155,8 +1119,7 @@ fn test_init_min_contribution_zero() {
         &None,
         &Some(0),
         &None,
-        &None,
-    );
+        &None, &None);
 }
 
 #[test]
@@ -1188,8 +1151,7 @@ fn test_init_tiers_unsorted() {
         &Some(tiers),
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 }
 
 #[test]
@@ -1221,8 +1183,7 @@ fn test_init_tiers_not_increasing_yield() {
         &Some(tiers),
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 }
 
 #[test]
@@ -1250,8 +1211,7 @@ fn test_init_tiers_lower_than_base() {
         &Some(tiers),
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 }
 
 #[test]
@@ -1273,8 +1233,7 @@ fn test_get_yield_bps_empty_tiers_branch() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     // Inject empty tiers directly to trigger the branch in get_yield_bps_for_commitment
     env.as_contract(&client.address, || {
@@ -1314,8 +1273,7 @@ fn test_init_tier_yield_out_of_range() {
         &Some(tiers),
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 }
 
 #[test]
@@ -1346,8 +1304,7 @@ fn test_get_escrow_summary_happy_path() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let summary = client.get_escrow_summary();
 
@@ -1397,8 +1354,7 @@ fn test_get_escrow_summary_after_state_changes() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     // Make state changes
     client.set_allowlist_active(&true);

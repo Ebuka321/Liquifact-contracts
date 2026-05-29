@@ -22,8 +22,7 @@ fn test_update_maturity_success() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let updated = client.update_maturity(&2000u64);
     assert_eq!(updated.maturity, 2000u64);
     assert_eq!(updated.status, 0);
@@ -48,8 +47,7 @@ fn test_update_maturity_wrong_state() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &1_000i128);
     client.update_maturity(&2000u64);
 }
@@ -75,8 +73,7 @@ fn test_update_maturity_unauthorized() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     env.mock_auths(&[]);
     client.update_maturity(&2000u64);
 }
@@ -99,8 +96,7 @@ fn test_propose_admin_sets_pending_without_changing_admin() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let pending = client.propose_admin(&new_admin);
     assert_eq!(pending, new_admin);
     assert_eq!(client.get_pending_admin(), Some(new_admin));
@@ -125,8 +121,7 @@ fn test_accept_admin_promotes_pending_and_clears_pending() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.propose_admin(&new_admin);
     let updated = client.accept_admin();
@@ -154,8 +149,7 @@ fn test_transfer_admin_deprecated_shim_only_proposes() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let unchanged = client.transfer_admin(&new_admin);
     assert_eq!(unchanged.admin, admin);
@@ -180,8 +174,7 @@ fn test_transfer_admin_same_address_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.propose_admin(&admin);
 }
 
@@ -319,8 +312,7 @@ fn test_read_model_summary_includes_optional_admin_fields() {
         &None,
         &Some(100i128),
         &Some(7u32),
-        &Some(10_000i128),
-    );
+        &Some(10_000i128), &None);
 
     let summary = client.get_escrow_summary();
 
@@ -351,8 +343,7 @@ fn test_record_collateral_stored_and_does_not_block_settle() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let c = client.record_sme_collateral_commitment(&symbol_short!("USDC"), &5000i128);
     assert_eq!(c.amount, 5000i128);
     assert_eq!(c.asset, symbol_short!("USDC"));
@@ -381,8 +372,7 @@ fn test_collateral_zero_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.record_sme_collateral_commitment(&symbol_short!("XLM"), &0i128);
 }
 
@@ -404,8 +394,7 @@ fn test_collateral_requires_sme_auth() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     env.mock_auths(&[]);
     client.record_sme_collateral_commitment(&symbol_short!("XLM"), &100i128);
 }
@@ -428,8 +417,7 @@ fn test_legal_hold_blocks_settle_withdraw_claim_and_fund() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &TARGET);
     client.set_legal_hold(&true);
     assert!(client.get_legal_hold());
@@ -479,8 +467,7 @@ fn test_legal_hold_blocks_new_funds_when_open() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.set_legal_hold(&true);
     client.fund(&investor, &1i128);
 }
@@ -519,8 +506,7 @@ fn test_update_funding_target_by_admin_succeeds() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     let updated = client.update_funding_target(&10_000i128);
     assert_eq!(updated.funding_target, 10_000i128);
@@ -550,8 +536,7 @@ fn test_update_funding_target_by_non_admin_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     env.mock_auths(&[]);
     client.update_funding_target(&10_000i128);
@@ -582,8 +567,7 @@ fn test_update_funding_target_fails_when_funded() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128);
     client.update_funding_target(&10_000i128);
 }
@@ -613,8 +597,7 @@ fn test_update_funding_target_below_funded_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &4_000i128);
     client.update_funding_target(&3_000i128);
 }
@@ -643,8 +626,7 @@ fn test_update_funding_target_zero_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.update_funding_target(&0i128);
 }
 
@@ -679,8 +661,7 @@ fn test_update_funding_target_event_fields() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.update_funding_target(&9_000i128);
 
@@ -723,8 +704,7 @@ fn test_update_funding_target_fails_when_settled() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128); // status → 1 (funded)
     client.settle(); // status → 2 (settled)
     client.update_funding_target(&6_000i128);
@@ -757,8 +737,7 @@ fn test_update_funding_target_fails_when_withdrawn() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128); // status → 1 (funded)
     client.withdraw(); // status → 3 (withdrawn)
     client.update_funding_target(&6_000i128);
@@ -791,8 +770,7 @@ fn test_update_funding_target_equal_to_funded_amount_succeeds() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &4_000i128); // funded_amount == 4_000, status still 0
 
     // new_target == funded_amount: boundary — must not panic.
@@ -827,8 +805,7 @@ fn test_update_funding_target_negative_panics() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.update_funding_target(&-1i128);
 }
 // --- update_maturity: open-only, ledger time semantics, MaturityUpdatedEvent ---
@@ -864,8 +841,7 @@ fn test_update_maturity_event_fields() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.update_maturity(&2000u64);
 
@@ -908,8 +884,7 @@ fn test_update_maturity_fails_when_funded() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128); // status → 1 (funded)
     client.update_maturity(&2000u64);
 }
@@ -941,8 +916,7 @@ fn test_update_maturity_fails_when_settled() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128); // status → 1
     client.settle(); // status → 2
     client.update_maturity(&2000u64);
@@ -975,8 +949,7 @@ fn test_update_maturity_fails_when_withdrawn() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128); // status → 1
     client.withdraw(); // status → 3
     client.update_maturity(&2000u64);
@@ -1007,8 +980,7 @@ fn test_update_maturity_to_zero_succeeds() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     let updated = client.update_maturity(&0u64);
     assert_eq!(updated.maturity, 0u64);
     assert_eq!(updated.status, 0);
@@ -1041,8 +1013,7 @@ fn test_settle_passes_exactly_at_maturity_ledger_time() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128);
 
     // Advance ledger to exactly maturity — must succeed
@@ -1078,8 +1049,7 @@ fn test_settle_fails_one_second_before_maturity() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &5_000i128);
 
     // One second before maturity — must reject
@@ -1112,8 +1082,7 @@ fn test_update_maturity_twice_overwrites() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
 
     client.update_maturity(&2000u64);
     let updated = client.update_maturity(&3000u64);
@@ -1287,8 +1256,7 @@ fn auth_audit_sweep_terminal_dust_requires_treasury() {
         &None,
         &None,
         &None,
-        &None,
-    );
+        &None, &None);
     client.fund(&investor, &TARGET);
     client.settle();
     token.stellar.mint(&escrow_id, &100i128);
