@@ -1,5 +1,5 @@
 use super::{free_addresses, setup};
-use crate::{DataKey, EscrowCloseSnapshot, EscrowError, YieldTier};
+use crate::{CollateralCommitmentSnapshot, DataKey, EscrowCloseSnapshot, EscrowError, YieldTier};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, Env, Error, InvokeError, Vec as SorobanVec,
@@ -1445,6 +1445,19 @@ fn test_get_escrow_summary_happy_path() {
     );
     assert_eq!(summary.is_allowlist_active, client.is_allowlist_active());
     assert_eq!(summary.schema_version, client.get_version());
+    let expected_collateral = match client.get_sme_collateral_commitment() {
+        Some(c) => CollateralCommitmentSnapshot::Some(c),
+        None => CollateralCommitmentSnapshot::None,
+    };
+    assert_eq!(summary.sme_collateral_commitment, expected_collateral);
+    assert_eq!(
+        summary.has_primary_attestation,
+        client.get_primary_attestation_hash().is_some()
+    );
+    assert_eq!(
+        summary.attestation_log_length,
+        client.get_attestation_append_log().len()
+    );
 
     // Verify default values specifically
     assert!(summary.has_maturity_lock);
@@ -1453,6 +1466,12 @@ fn test_get_escrow_summary_happy_path() {
     assert_eq!(summary.unique_funder_count, 0);
     assert!(!summary.is_allowlist_active);
     assert_eq!(summary.schema_version, 6);
+    assert_eq!(
+        summary.sme_collateral_commitment,
+        CollateralCommitmentSnapshot::None
+    );
+    assert!(!summary.has_primary_attestation);
+    assert_eq!(summary.attestation_log_length, 0);
 }
 
 #[test]
@@ -1506,6 +1525,19 @@ fn test_get_escrow_summary_after_state_changes() {
     );
     assert_eq!(summary.is_allowlist_active, client.is_allowlist_active());
     assert_eq!(summary.schema_version, client.get_version());
+    let expected_collateral = match client.get_sme_collateral_commitment() {
+        Some(c) => CollateralCommitmentSnapshot::Some(c),
+        None => CollateralCommitmentSnapshot::None,
+    };
+    assert_eq!(summary.sme_collateral_commitment, expected_collateral);
+    assert_eq!(
+        summary.has_primary_attestation,
+        client.get_primary_attestation_hash().is_some()
+    );
+    assert_eq!(
+        summary.attestation_log_length,
+        client.get_attestation_append_log().len()
+    );
 
     // Verify state-specific values
     assert!(summary.has_maturity_lock);
@@ -1524,4 +1556,92 @@ fn test_get_escrow_summary_after_state_changes() {
     };
     assert_eq!(snapshot.total_principal, 1000);
     assert_eq!(snapshot.funding_target, 1000);
+
+    // New fields should still be at defaults (no collateral or attestations set)
+    assert_eq!(
+        summary.sme_collateral_commitment,
+        CollateralCommitmentSnapshot::None
+    );
+    assert!(!summary.has_primary_attestation);
+    assert_eq!(summary.attestation_log_length, 0);
+}
+
+#[test]
+fn test_get_escrow_summary_with_collateral_and_attestations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    let (funding_token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "INV002"),
+        &sme,
+        &1000,
+        &100,
+        &100,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    // Record SME collateral
+    let asset = soroban_sdk::Symbol::new(&env, "GOLD");
+    client.record_sme_collateral_commitment(&asset, &5000);
+
+    // Bind primary attestation hash
+    let primary_hash = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
+    client.bind_primary_attestation_hash(&primary_hash);
+
+    // Append several attestation digests
+    let hash2 = soroban_sdk::BytesN::from_array(&env, &[2u8; 32]);
+    let hash3 = soroban_sdk::BytesN::from_array(&env, &[3u8; 32]);
+    client.append_attestation_digest(&hash2);
+    client.append_attestation_digest(&hash3);
+
+    let summary = client.get_escrow_summary();
+
+    // Verify all fields match individual getters
+    assert_eq!(summary.escrow, client.get_escrow());
+    assert_eq!(summary.has_maturity_lock, client.has_maturity_lock());
+    assert_eq!(summary.legal_hold, client.get_legal_hold());
+    let expected_snapshot = match client.get_funding_close_snapshot() {
+        Some(snap) => EscrowCloseSnapshot::Some(snap),
+        None => EscrowCloseSnapshot::None,
+    };
+    assert_eq!(summary.funding_close_snapshot, expected_snapshot);
+    assert_eq!(
+        summary.unique_funder_count,
+        client.get_unique_funder_count()
+    );
+    assert_eq!(summary.is_allowlist_active, client.is_allowlist_active());
+    assert_eq!(summary.schema_version, client.get_version());
+    let expected_collateral = match client.get_sme_collateral_commitment() {
+        Some(c) => CollateralCommitmentSnapshot::Some(c),
+        None => CollateralCommitmentSnapshot::None,
+    };
+    assert_eq!(summary.sme_collateral_commitment, expected_collateral);
+    assert_eq!(
+        summary.has_primary_attestation,
+        client.get_primary_attestation_hash().is_some()
+    );
+    assert_eq!(
+        summary.attestation_log_length,
+        client.get_attestation_append_log().len()
+    );
+
+    // Verify new field values
+    let collateral = match &summary.sme_collateral_commitment {
+        CollateralCommitmentSnapshot::Some(c) => c,
+        CollateralCommitmentSnapshot::None => panic!("Expected collateral"),
+    };
+    assert_eq!(collateral.asset, asset);
+    assert_eq!(collateral.amount, 5000);
+    assert!(summary.has_primary_attestation);
+    assert_eq!(summary.attestation_log_length, 2);
 }

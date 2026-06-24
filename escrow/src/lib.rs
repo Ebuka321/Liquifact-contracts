@@ -433,14 +433,13 @@ pub struct InvoiceEscrow {
 /// enforce asset movement or custody must introduce explicit APIs and must not treat historical
 /// records from this type as proof of locked assets.
 #[contracttype]
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 /// SME collateral commitment metadata (record-only).
 ///
 /// Derive rationale:
+/// - `Clone`: required for `Option<SmeCollateralCommitment>` used in `EscrowSummary`.
 /// - `Debug`: improves failure diagnostics in tests.
 /// - `PartialEq`: allows deterministic assertion of stored/read values.
-///
-/// `Clone` is intentionally omitted to avoid accidental large-value duplication.
 pub struct SmeCollateralCommitment {
     pub asset: Symbol,
     pub amount: i128,
@@ -483,6 +482,16 @@ pub enum EscrowCloseSnapshot {
     Some(FundingCloseSnapshot),
 }
 
+/// Custom option-like enum to represent the SME collateral commitment.
+/// Models standard option semantics as a contracttype to avoid standard library
+/// blanket trait limitations in Soroban SDK testutils.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CollateralCommitmentSnapshot {
+    None,
+    Some(SmeCollateralCommitment),
+}
+
 /// Comprehensive summary of the escrow contract state.
 /// Bundles multiple read-only values to allow a single host invocation
 /// for off-chain indexers and client rendering.
@@ -503,6 +512,12 @@ pub struct EscrowSummary {
     pub is_allowlist_active: bool,
     /// Persisted schema version of the contract data.
     pub schema_version: u32,
+    /// SME collateral commitment metadata (None when never recorded).
+    pub sme_collateral_commitment: CollateralCommitmentSnapshot,
+    /// Whether a primary attestation hash has been bound.
+    pub has_primary_attestation: bool,
+    /// Number of entries in the attestation append log.
+    pub attestation_log_length: u32,
 }
 
 // --- Events ---
@@ -1327,10 +1342,18 @@ impl LiquifactEscrow {
         let unique_funder_count = Self::get_unique_funder_count(env.clone());
         let is_allowlist_active = Self::is_allowlist_active(env.clone());
         let schema_version = Self::get_version(env.clone());
+        let sme_collateral_commitment = Self::get_sme_collateral_commitment(env.clone());
+        let primary_attestation_hash = Self::get_primary_attestation_hash(env.clone());
+        let attestation_append_log = Self::get_attestation_append_log(env.clone());
 
         let funding_close_snapshot = match funding_close_snapshot_opt {
             Some(snap) => EscrowCloseSnapshot::Some(snap),
             None => EscrowCloseSnapshot::None,
+        };
+
+        let sme_collateral_commitment = match sme_collateral_commitment {
+            Some(collateral) => CollateralCommitmentSnapshot::Some(collateral),
+            None => CollateralCommitmentSnapshot::None,
         };
 
         EscrowSummary {
@@ -1341,6 +1364,9 @@ impl LiquifactEscrow {
             unique_funder_count,
             is_allowlist_active,
             schema_version,
+            sme_collateral_commitment,
+            has_primary_attestation: primary_attestation_hash.is_some(),
+            attestation_log_length: attestation_append_log.len(),
         }
     }
 
