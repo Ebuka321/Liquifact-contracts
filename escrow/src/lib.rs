@@ -350,9 +350,6 @@ pub enum EscrowError {
     LegalHoldClearNotReady = 151,
     /// Computing the legal-hold clear ready-at timestamp would overflow.
     LegalHoldClearDelayOverflow = 152,
-    /// Funding deadline has passed, new deposits are rejected.
-    FundingDeadlinePassed = 164,
-
     /// A legal hold blocks rotating the beneficiary (SME) address.
     LegalHoldBlocksBeneficiaryRotation = 160,
     /// Beneficiary rotation was attempted while the escrow was not in a
@@ -366,6 +363,8 @@ pub enum EscrowError {
     /// The contract's funding-token balance is less than `funded_amount` at withdraw time.
     /// Funds must be custodied in this contract before the SME can pull them.
     InsufficientContractBalance = 164,
+    /// Funding deadline has passed, new deposits are rejected.
+    FundingDeadlinePassed = 165,
 }
 
 #[inline(always)]
@@ -1202,6 +1201,23 @@ impl LiquifactEscrow {
     /// status guards.
     pub fn has_maturity_lock(env: Env) -> bool {
         Self::get_escrow(env).maturity > 0
+    }
+
+    /// Returns `true` when the escrow is immediately settleable by the SME:
+    /// - `status == 1` (funded), **and**
+    /// - maturity is zero or the ledger timestamp has reached `maturity`, **and**
+    /// - no legal hold is active.
+    ///
+    /// This is a pure read — it does not mutate state or require authorization.
+    pub fn is_settleable(env: Env) -> bool {
+        if Self::legal_hold_active(&env) {
+            return false;
+        }
+        let escrow = Self::get_escrow(env.clone());
+        if escrow.status != 1 {
+            return false;
+        }
+        escrow.maturity == 0 || env.ledger().timestamp() >= escrow.maturity
     }
 
     /// Move up to `amount` (capped by balance and [`MAX_DUST_SWEEP_AMOUNT`]) of the **funding token**
@@ -2201,11 +2217,7 @@ impl LiquifactEscrow {
         let n = entries.len();
 
         ensure(&env, n > 0, EscrowError::FundingBatchEmpty);
-        ensure(
-            &env,
-            n <= MAX_FUND_BATCH,
-            EscrowError::FundingBatchTooLarge,
-        );
+        ensure(&env, n <= MAX_FUND_BATCH, EscrowError::FundingBatchTooLarge);
 
         let mut escrow = Self::get_escrow(env.clone());
 
