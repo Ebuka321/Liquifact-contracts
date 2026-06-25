@@ -2203,20 +2203,19 @@ impl LiquifactEscrow {
         let n = entries.len();
 
         ensure(&env, n > 0, EscrowError::FundingBatchEmpty);
-        ensure(
-            &env,
-            n <= MAX_FUND_BATCH,
-            EscrowError::FundingBatchTooLarge,
-        );
+        ensure(&env, n <= MAX_FUND_BATCH, EscrowError::FundingBatchTooLarge);
         // Detect duplicate investor addresses before any state mutation.
         let mut seen: Vec<Address> = Vec::new();
         for i in 0..n {
             let (investor, _) = entries.get(i).unwrap();
-            ensure(&env, !seen.contains(investor), EscrowError::FundingBatchDuplicateInvestor);
+            ensure(
+                &env,
+                !seen.contains(investor),
+                EscrowError::FundingBatchDuplicateInvestor,
+            );
             seen.push(investor.clone());
         }
 
-        
         let mut escrow = Self::get_escrow(env.clone());
 
         for i in 0..n {
