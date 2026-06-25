@@ -213,3 +213,45 @@ A `#[contracttype]` enum representing the optional `FundingCloseSnapshot`:
 
 - `None` — Escrow is not yet funded; no close snapshot exists.
 - `Some(FundingCloseSnapshot)` — The pro-rata denominator snapshot captured when the escrow first transitioned to **funded**.
+
+---
+
+## `preview_fund(investor: Address, amount: i128) → u32`
+
+**Pure read-only preview** of a deposit call. Runs the same precondition checks as
+`fund()` in the exact same order, without requiring authorization or mutating state.
+
+### Return values
+
+| Code | Meaning |
+|------|---------|
+| `0`  | Deposit would be accepted by `fund()` |
+| `>0` | The numeric [`EscrowError`](escrow-error-messages.md) code that `fund()` would raise first |
+
+### Guard order (matches `fund_impl`)
+
+| Order | Check | Error code |
+|-------|-------|------------|
+| 1 | Amount is positive | `FundingAmountNotPositive` (100) |
+| 2 | Meets `min_contribution` floor (if configured) | `FundingBelowMinContribution` (101) |
+| 3 | Escrow is initialized (reads `DataKey::Escrow`) | — (panics if uninitialized, matching `fund`) |
+| 4 | No active legal hold | `LegalHoldBlocksFunding` (102) |
+| 5 | Escrow status is open (0) | `EscrowNotOpenForFunding` (103) |
+| 6 | Funding deadline not passed | `FundingDeadlinePassed` (164) |
+| 7 | Allowlist gate (if active): investor is allowlisted | `InvestorNotAllowlisted` (104) |
+| 8 | Investor contribution does not overflow | `InvestorContributionOverflow` (105) |
+| 9 | Per-investor cap not exceeded (if configured) | `InvestorContributionExceedsCap` (106) |
+| 10 | Unique-investor cap not reached (if configured, new investors only) | `UniqueInvestorCapReached` (107) |
+
+### Advisory
+
+This is a **read-only preview**. The actual `fund()` call is the source of truth
+and may still revert due to racing state changes (e.g. another transaction fills
+the unique-investor cap or the admin closes funding between the preview and the
+subsequent `fund()` call).
+
+### Security
+
+- **No `require_auth`** — the investor address is not required to sign.
+- **No storage writes** — returns the first failing code without mutating state.
+- **Advisory only** — callers must still handle `fund()` reverting on race conditions.
