@@ -8,6 +8,67 @@ use soroban_sdk::Event;
 // legal hold, migration guards, and collateral metadata.
 
 #[test]
+fn test_update_maturity_emits_event() {
+    use soroban_sdk::testutils::Events as _;
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let contract_id = client.address.clone();
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT_EVT"),
+        &sme,
+        &1_000i128,
+        &500i64,
+        &1000u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.update_maturity(&2000u64);
+    assert_eq!(
+        env.events().all().events().last().unwrap().clone(),
+        crate::MaturityUpdatedEvent {
+            name: symbol_short!("maturity"),
+            invoice_id: client.get_escrow().invoice_id,
+            old_maturity: 1000u64,
+            new_maturity: 2000u64,
+        }
+        .to_xdr(&env, &contract_id)
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_update_maturity_unchanged_panics() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "INV006c"),
+        &sme,
+        &1_000i128,
+        &500i64,
+        &2000u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.update_maturity(&2000u64);
+}
+
+#[test]
 fn test_update_maturity_success() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
@@ -1407,7 +1468,42 @@ fn test_update_maturity_twice_overwrites() {
     assert_eq!(client.get_escrow().maturity, 3000u64);
 }
 
-// ├ö├Â├ç├ö├Â├ç Authorization guard ordering audit (issue #265) ├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç├ö├Â├ç
+#[test]
+fn test_update_maturity_edge_cases_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let client = deploy(&env);
+
+    let token = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT_EDGE"),
+        &sme,
+        &5_000i128,
+        &800i64,
+        &1000u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    let updated1 = client.update_maturity(&2000u64);
+    assert_eq!(updated1.maturity, 2000u64);
+
+    let updated2 = client.update_maturity(&500u64);
+    assert_eq!(updated2.maturity, 500u64);
+}
+
+// ── Authorization guard ordering audit (issue #265) ───────────────────────────
 //
 // Negative tests: each guarded entrypoint must trap when `require_auth` fails
 // (Soroban host aborts the transaction). Canonical ordering is documented in
