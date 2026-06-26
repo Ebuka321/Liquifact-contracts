@@ -310,4 +310,20 @@ ledger timestamp (seconds since Unix epoch, inclusive).
   the status 1→2 transition. There is no path to overwrite or delete the key after it is set.
   `get_settled_at` is a pure read — it performs no mutation and has no auth requirement.
 - **Token economics:** time-based yield calculations are out of scope.
-  See `escrow/src/external_calls.rs` for token transfer assumptions.
+   See `escrow/src/external_calls.rs` for token transfer assumptions.
+
+### Maturity bounds validation
+
+Both `init` and `update_maturity` enforce that non-zero maturity timestamps satisfy two constraints:
+
+1. **Maturity ≥ now** — a maturity in the past would make settlement immediately callable at
+   deployment time, which may be unintended. A past maturity is rejected with
+   `EscrowError::MaturityInPast`.
+2. **Maturity ≤ now + max_horizon** — a maturity far beyond any plausible ledger time could
+   lock settlement forever. The max horizon defaults to `DEFAULT_MATURITY_MAX_HORIZON_SECS`
+   (~5 years) and can be configured at init via the `maturity_max_horizon` parameter or
+   updated after deployment via `update_maturity_max_horizon` (admin only).
+
+A maturity of `0` always passes validation — it means "no maturity lock".
+
+See `EscrowError::MaturityInPast` and `EscrowError::MaturityExceedsMaxHorizon`.

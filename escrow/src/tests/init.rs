@@ -1102,3 +1102,370 @@ fn datakey_distributed_principal_starts_at_zero_and_increments_on_refund() {
     client.refund(&investor);
     assert_eq!(client.get_distributed_principal(), 500i128);
 }
+
+// ── Maturity bounds (init path) ─────────────────────────────────────────
+
+#[test]
+fn test_init_maturity_zero_accepted() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT00"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert_eq!(client.get_escrow().maturity, 0);
+}
+
+#[test]
+fn test_init_maturity_within_horizon_accepted() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT01"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &2000u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert_eq!(client.get_escrow().maturity, 2000);
+}
+
+#[test]
+fn test_init_maturity_at_horizon_boundary_accepted() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    let now = 1000u64;
+    env.ledger().set_timestamp(now);
+    let at_boundary = now + DEFAULT_MATURITY_MAX_HORIZON_SECS;
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT02"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &at_boundary,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert_eq!(client.get_escrow().maturity, at_boundary);
+}
+
+#[test]
+#[should_panic(expected = "MaturityExceedsMaxHorizon")]
+fn test_init_maturity_beyond_horizon_rejected() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT03"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &(1000u64 + DEFAULT_MATURITY_MAX_HORIZON_SECS + 1),
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+}
+
+#[test]
+#[should_panic(expected = "MaturityInPast")]
+fn test_init_maturity_in_past_rejected() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(2000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT04"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &1000u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+}
+
+#[test]
+fn test_init_with_custom_horizon_used() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    let short_horizon = 3600u64; // 1 hour
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MAT05"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &3000u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &Some(short_horizon),
+    );
+    assert_eq!(client.get_maturity_max_horizon(), short_horizon);
+    assert_eq!(client.get_escrow().maturity, 3000);
+}
+
+// ── Maturity bounds (update_maturity path) ──────────────────────────────
+
+#[test]
+fn test_update_maturity_zero_accepted() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MATU0"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &5000u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    let updated = client.update_maturity(&0u64);
+    assert_eq!(updated.maturity, 0);
+}
+
+#[test]
+fn test_update_maturity_within_horizon_accepted() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MATU1"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    let updated = client.update_maturity(&2000u64);
+    assert_eq!(updated.maturity, 2000);
+}
+
+#[test]
+fn test_update_maturity_at_horizon_boundary_accepted() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    let now = 1000u64;
+    env.ledger().set_timestamp(now);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MATU2"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    let at_boundary = now + DEFAULT_MATURITY_MAX_HORIZON_SECS;
+    let updated = client.update_maturity(&at_boundary);
+    assert_eq!(updated.maturity, at_boundary);
+}
+
+#[test]
+#[should_panic(expected = "MaturityExceedsMaxHorizon")]
+fn test_update_maturity_beyond_horizon_rejected() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MATU3"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.update_maturity(&(1000u64 + DEFAULT_MATURITY_MAX_HORIZON_SECS + 1));
+}
+
+#[test]
+#[should_panic(expected = "MaturityInPast")]
+fn test_update_maturity_in_past_rejected() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(5000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "MATU4"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.update_maturity(&1000u64);
+}
+
+// ── update_maturity_max_horizon ─────────────────────────────────────────
+
+#[test]
+fn test_update_maturity_max_horizon_by_admin() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "HOR01"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    // Default horizon is DEFAULT_MATURITY_MAX_HORIZON_SECS
+    assert_eq!(
+        client.get_maturity_max_horizon(),
+        DEFAULT_MATURITY_MAX_HORIZON_SECS
+    );
+    // Update to a shorter horizon
+    let new_horizon = 7200u64; // 2 hours
+    let result = client.update_maturity_max_horizon(&new_horizon);
+    assert_eq!(result, new_horizon);
+    assert_eq!(client.get_maturity_max_horizon(), new_horizon);
+    // Update_maturity now uses the new tighter horizon
+    client.update_maturity(&(1000u64 + 3600u64)); // 1h from now — within 2h horizon
+}
+
+#[test]
+#[should_panic(expected = "MaturityExceedsMaxHorizon")]
+fn test_update_maturity_honors_reduced_horizon() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    env.ledger().set_timestamp(1000);
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "HOR02"),
+        &sme,
+        &1000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    client.update_maturity_max_horizon(&3600u64); // 1 hour
+    client.update_maturity(&(1000u64 + 7200u64)); // 2 hours — exceeds new 1h horizon
+}

@@ -225,6 +225,13 @@ pub const INSTANCE_TTL_MIN_EXTENSION_LEDGERS: u32 = 60 * 60; // Approx. 1h at 1 
 /// Extending persistent allowlist TTL reduces the risk of silent allowlist disablement.
 pub const PERSISTENT_TTL_MIN_EXTENSION_LEDGERS: u32 = 60 * 60; // Approx. 1h at 1 ledger/sec.
 
+/// Default maximum maturity horizon in seconds (~5 years) when no explicit horizon is configured.
+///
+/// Used as the upper bound in [`validate_maturity_bounds`] unless overridden at init or via
+/// [`LiquifactEscrow::update_maturity_max_horizon`]. Prevents accidental permanent settlement locks
+/// from mistakenly far-future maturity timestamps.
+pub const DEFAULT_MATURITY_MAX_HORIZON_SECS: u64 = 157_680_000; // ~5 years (365.25 * 24 * 3600 * 5)
+
 /// Stable typed errors emitted by LiquiFact escrow entrypoints.
 ///
 /// Codes are append-only: never reuse or renumber a variant. Client SDKs should branch on the
@@ -418,11 +425,10 @@ pub enum EscrowError {
     /// The proposed new SME address is identical to the current beneficiary.
     NewSmeSameAsCurrent = 162,
 
-    /// Attempted to accept admin role when no pending admin exists.
-    NoPendingAdmin = 163,
-    /// The contract's funding-token balance is less than `funded_amount` at withdraw time.
-    /// Funds must be custodied in this contract before the SME can pull them.
-    InsufficientContractBalance = 165,
+    /// A non-zero maturity timestamp is earlier than the current ledger time (cannot settle in the past).
+    MaturityInPast = 163,
+    /// A maturity timestamp exceeds the configured maximum horizon from the current ledger time.
+    MaturityExceedsMaxHorizon = 164,
 }
 
 #[inline(always)]
@@ -435,6 +441,32 @@ pub(crate) fn ensure(env: &Env, condition: bool, error: EscrowError) {
     if !condition {
         fail(env, error);
     }
+}
+
+/// Validates that a non-zero maturity timestamp is not in the past and not beyond the
+/// configured maximum horizon from the current ledger time.
+///
+/// # Arguments
+/// * `maturity` - The maturity timestamp to validate (0 means "no lock" and is always accepted).
+/// * `max_horizon` - The maximum allowed horizon in seconds from the current ledger time.
+///
+/// # Panics
+/// * [`EscrowError::MaturityInPast`] if `maturity` is less than the current ledger timestamp.
+/// * [`EscrowError::MaturityExceedsMaxHorizon`] if `maturity` exceeds `now + max_horizon`.
+pub(crate) fn validate_maturity_bounds(env: &Env, maturity: u64, max_horizon: u64) {
+    if maturity == 0 {
+        return;
+    }
+    let now = env.ledger().timestamp();
+
+    ensure(env, maturity >= now, EscrowError::MaturityInPast);
+
+    let max_allowed = now.saturating_add(max_horizon);
+    ensure(
+        env,
+        maturity <= max_allowed,
+        EscrowError::MaturityExceedsMaxHorizon,
+    );
 }
 
 // --- Storage keys ---
@@ -547,14 +579,10 @@ pub enum DataKey {
     /// Used by [`LiquifactEscrow::sweep_terminal_dust`] to compute outstanding liabilities:
     /// `outstanding = funded_amount - distributed_principal`.
     DistributedPrincipal,
-    /// Optional funding deadline (ledger timestamp); after it passes, new funds are rejected.
-    FundingDeadline,
-    /// Ledger timestamp (seconds since Unix epoch) recorded exactly once when `status` transitions
-    /// from 1 → 2 inside [`LiquifactEscrow::settle`].
-    ///
-    /// **Write-once:** written by `settle` only; the getter returns [`None`] on legacy instances
-    /// where this key was never written (ADR-007 additive-key policy).
-    SettledAt,
+    /// Configured maximum maturity horizon in seconds from current ledger time.
+    /// Absent ⇒ falls back to [`DEFAULT_MATURITY_MAX_HORIZON_SECS`].
+    /// Set at init and updatable via [`LiquifactEscrow::update_maturity_max_horizon`].
+    MaturityMaxHorizon,
 }
 
 // --- Data types ---
@@ -773,6 +801,16 @@ pub struct MaturityUpdatedEvent {
     pub invoice_id: Symbol,
     pub old_maturity: u64,
     pub new_maturity: u64,
+}
+
+#[contractevent]
+pub struct MaturityMaxHorizonUpdated {
+    #[topic]
+    pub name: Symbol,
+    #[topic]
+    pub invoice_id: Symbol,
+    pub old_horizon: u64,
+    pub new_horizon: u64,
 }
 
 #[contractevent]
@@ -1165,8 +1203,7 @@ impl LiquifactEscrow {
         max_unique_investors: Option<u32>,
         max_per_investor: Option<i128>,
         legal_hold_clear_delay: Option<u64>,
-        funding_deadline: Option<u64>,
-        allowlist_active: Option<bool>,
+        maturity_max_horizon: Option<u64>,
     ) -> InvoiceEscrow {
         admin.require_auth();
 
@@ -1206,6 +1243,14 @@ impl LiquifactEscrow {
         }
 
         Self::validate_yield_tiers_table(&env, &yield_tiers, yield_bps);
+
+        // Resolve and persist the maturity max horizon before validation so
+        // validate_maturity_bounds can use the configured value.
+        let max_horizon = maturity_max_horizon.unwrap_or(DEFAULT_MATURITY_MAX_HORIZON_SECS);
+        validate_maturity_bounds(&env, maturity, max_horizon);
+        env.storage()
+            .instance()
+            .set(&DataKey::MaturityMaxHorizon, &max_horizon);
 
         let invoice_sym = validate_invoice_id_string(&env, &invoice_id);
 
@@ -1332,6 +1377,18 @@ impl LiquifactEscrow {
     /// status guards.
     pub fn has_maturity_lock(env: Env) -> bool {
         Self::get_escrow(env).maturity > 0
+    }
+
+    /// Returns the configured maximum maturity horizon for this escrow instance.
+    ///
+    /// Falls back to [`DEFAULT_MATURITY_MAX_HORIZON_SECS`] when no explicit value was set at init.
+    /// The horizon is stored at [`DataKey::MaturityMaxHorizon`] and can be updated via
+    /// [`LiquifactEscrow::update_maturity_max_horizon`].
+    pub fn get_maturity_max_horizon(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get::<DataKey, u64>(&DataKey::MaturityMaxHorizon)
+            .unwrap_or(DEFAULT_MATURITY_MAX_HORIZON_SECS)
     }
 
     /// Move up to `amount` (capped by balance and [`MAX_DUST_SWEEP_AMOUNT`]) of the **funding token**
@@ -3174,6 +3231,13 @@ impl LiquifactEscrow {
 
         ensure(&env, escrow.status == 0, EscrowError::MaturityUpdateNotOpen);
 
+        let max_horizon = env
+            .storage()
+            .instance()
+            .get::<DataKey, u64>(&DataKey::MaturityMaxHorizon)
+            .unwrap_or(DEFAULT_MATURITY_MAX_HORIZON_SECS);
+        validate_maturity_bounds(&env, new_maturity, max_horizon);
+
         let old_maturity = escrow.maturity;
         escrow.maturity = new_maturity;
 
@@ -3188,6 +3252,36 @@ impl LiquifactEscrow {
         .publish(&env);
 
         escrow
+    }
+
+    /// Update the configured maximum maturity horizon for this escrow instance.
+    ///
+    /// Only the current admin may call this. The new horizon applies to subsequent
+    /// [`LiquifactEscrow::update_maturity`] calls; existing maturity values are unaffected.
+    ///
+    /// Emits [`MaturityMaxHorizonUpdated`] with the old and new horizon values.
+    pub fn update_maturity_max_horizon(env: Env, new_horizon: u64) -> u64 {
+        let escrow = Self::load_escrow_require_admin(&env);
+
+        let old_horizon = env
+            .storage()
+            .instance()
+            .get::<DataKey, u64>(&DataKey::MaturityMaxHorizon)
+            .unwrap_or(DEFAULT_MATURITY_MAX_HORIZON_SECS);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::MaturityMaxHorizon, &new_horizon);
+
+        MaturityMaxHorizonUpdated {
+            name: symbol_short!("mtry_max"),
+            invoice_id: escrow.invoice_id,
+            old_horizon,
+            new_horizon,
+        }
+        .publish(&env);
+
+        new_horizon
     }
 
     pub fn bump_ttl(env: Env, allowlisted: Vec<Address>) {
