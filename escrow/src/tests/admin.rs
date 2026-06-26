@@ -1346,7 +1346,8 @@ fn test_rotate_beneficiary_success_dual_auth() {
 #[test]
 #[should_panic]
 fn test_rotate_beneficiary_only_sme_auth_fails() {
-    use soroban_sdk::{testutils::MockAuth, IntoVal, Vec as SorobanVec};
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    use soroban_sdk::IntoVal;
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
@@ -1354,20 +1355,21 @@ fn test_rotate_beneficiary_only_sme_auth_fails() {
     default_init(&client, &env, &admin, &sme);
     env.mock_auths(&[MockAuth {
         address: &sme,
-        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+        invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "rotate_beneficiary",
-            args: SorobanVec::from_array(&env, [(new_sme.clone(),).into_val(&env)]),
+            args: (&new_sme,).into_val(&env),
             sub_invokes: &[],
         },
-    }]);
+    }]); // Only SME auth
     client.rotate_beneficiary(&new_sme);
 }
 
 #[test]
 #[should_panic]
 fn test_rotate_beneficiary_only_admin_auth_fails() {
-    use soroban_sdk::{testutils::MockAuth, IntoVal, Vec as SorobanVec};
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    use soroban_sdk::IntoVal;
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
@@ -1375,13 +1377,13 @@ fn test_rotate_beneficiary_only_admin_auth_fails() {
     default_init(&client, &env, &admin, &sme);
     env.mock_auths(&[MockAuth {
         address: &admin,
-        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+        invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "rotate_beneficiary",
-            args: SorobanVec::from_array(&env, [(new_sme.clone(),).into_val(&env)]),
+            args: (&new_sme,).into_val(&env),
             sub_invokes: &[],
         },
-    }]);
+    }]); // Only admin auth
     client.rotate_beneficiary(&new_sme);
 }
 */
@@ -1504,12 +1506,7 @@ fn test_rotate_beneficiary_then_withdraw_goes_to_new_sme() {
         &None,
     );
     token.stellar.mint(&investor, &TARGET);
-    token.stellar.approve(
-        &investor,
-        &escrow_id,
-        &TARGET,
-        &(env.ledger().sequence() + 10_000),
-    );
+    token.stellar.approve(&investor, &escrow_id, &TARGET, &9999u32);
     client.fund(&investor, &TARGET);
     // Mint funded_amount into the escrow contract so withdraw() can transfer it.
     token.stellar.mint(&escrow_id, &TARGET);

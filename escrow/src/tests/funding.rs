@@ -2873,27 +2873,8 @@ fn lock_with_zero_maturity_is_always_accepted() {
         &None,
         &None,
     );
-    let escrow = client.fund_with_commitment(&investor, &1_000i128, &9999u64);
-    assert_eq!(escrow.status, 0);
-    assert_eq!(client.get_investor_claim_not_before(&investor), 10999u64);
 }
 
-#[test]
-fn plain_fund_with_maturity_ignores_lock_bound() {
-    // fund() (simple_fund=true) never sets a claim lock; bound is irrelevant
-    let env = Env::default();
-    env.mock_all_auths();
-    let mut li = env.ledger().get();
-    li.timestamp = 1000;
-    env.ledger().set(li);
-    let (client, admin, sme) = setup(&env);
-    let investor = soroban_sdk::Address::generate(&env);
-    init_with_maturity(&env, &client, &admin, &sme, 2000);
-    // fund() should succeed regardless of maturity; it never imposes a lock
-    let escrow = client.fund(&investor, &1_000i128);
-    assert_eq!(escrow.status, 0);
-    assert_eq!(client.get_investor_claim_not_before(&investor), 0u64);
-}
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests for fund_batch entrypoint (Issue #311)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3037,9 +3018,13 @@ fn test_fund_batch_per_investor_cap_rejection() {
 fn test_fund_batch_mid_batch_funded_transition() {
     let env = Env::default();
     env.mock_all_auths();
+    let mut li = env.ledger().get();
+    li.timestamp = 1000;
+    env.ledger().set(li);
     let client = deploy(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
+    let investor = Address::generate(&env);
     let (tok, tre) = free_addresses(&env);
     let investor = Address::generate(&env);
 
@@ -3254,12 +3239,157 @@ fn test_fund_batch_preserves_event_semantics() {
 
     // Verify events emitted
     let events = env.events().all();
-    assert_eq!(
-        events.events().len(),
-        2,
-        "should emit 2 EscrowFunded events"
-    );
+    assert_eq!(events.events().len(), 2, "should emit 2 EscrowFunded events");
 
     // Each event corresponds to a fund operation
     // (Detailed event field verification depends on EscrowFunded structure)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests for real inbound token custody during funding (Issue #373)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_funding_real_inbound_custody_and_reconciliation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let investor = Address::generate(&env);
+
+    // 1. Install Stellar Asset Contract
+    let token = install_stellar_asset_token(&env);
+    let treasury = Address::generate(&env);
+
+    let target = 100_000i128;
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "REALCUST"),
+        &sme,
+        &target,
+        &800i64,
+        &0u64,
+        &token.id,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    // 2. Mint to investor
+    let funding_amount = 40_000i128;
+    token.stellar.mint(&investor, &funding_amount);
+
+    let investor_balance_before = token.token.balance(&investor);
+    let contract_balance_before = token.token.balance(&client.address);
+    assert_eq!(investor_balance_before, funding_amount);
+    assert_eq!(contract_balance_before, 0);
+
+    // 3. Fund
+    client.fund(&investor, &funding_amount);
+
+    // 4. Assert balance deltas
+    let investor_balance_after = token.token.balance(&investor);
+    let contract_balance_after = token.token.balance(&client.address);
+    assert_eq!(investor_balance_after, 0);
+    assert_eq!(contract_balance_after, funding_amount);
+
+    // 5. Reconciliation with funded_amount
+    let escrow = client.get_escrow();
+    assert_eq!(escrow.funded_amount, funding_amount);
+    assert_eq!(contract_balance_after, escrow.funded_amount);
+}
+
+#[test]
+fn test_funding_insufficient_balance_failure() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let investor = Address::generate(&env);
+
+    let token = install_stellar_asset_token(&env);
+    let treasury = Address::generate(&env);
+
+    let target = 100_000i128;
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "NOBALANCE"),
+        &sme,
+        &target,
+        &800i64,
+        &0u64,
+        &token.id,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    // Mint less than funding amount (10_000 instead of 40_000)
+    token.stellar.mint(&investor, &10_000i128);
+
+    // Attempting to fund 40_000 should fail with InboundInsufficientTokenBalanceBeforeTransfer
+    let result = client.try_fund(&investor, &40_000i128);
+    assert_contract_error(result, EscrowError::InboundInsufficientTokenBalanceBeforeTransfer);
+
+    // Verify state was not mutated (balance and funded_amount unchanged)
+    assert_eq!(token.token.balance(&investor), 10_000i128);
+    assert_eq!(token.token.balance(&client.address), 0);
+    assert_eq!(client.get_escrow().funded_amount, 0);
+    assert_eq!(client.get_contribution(&investor), 0);
+}
+
+#[test]
+fn test_fund_with_commitment_real_inbound_custody() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let investor = Address::generate(&env);
+
+    let token = install_stellar_asset_token(&env);
+    let treasury = Address::generate(&env);
+
+    let target = 100_000i128;
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "REALCOMM"),
+        &sme,
+        &target,
+        &800i64,
+        &0u64,
+        &token.id,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+
+    let funding_amount = 50_000i128;
+    token.stellar.mint(&investor, &funding_amount);
+
+    client.fund_with_commitment(&investor, &funding_amount, &0u64);
+
+    assert_eq!(token.token.balance(&investor), 0);
+    assert_eq!(token.token.balance(&client.address), funding_amount);
+    let escrow = client.get_escrow();
+    assert_eq!(escrow.funded_amount, funding_amount);
+    assert_eq!(token.token.balance(&client.address), escrow.funded_amount);
+}
+

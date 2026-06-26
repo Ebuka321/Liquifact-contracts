@@ -161,7 +161,36 @@ liquifact-contracts/
 | `get_sme_collateral_commitment` | — | Return current pledge record, or `None`. |
 | `clear_sme_collateral_commitment` | SME | Retire a recorded pledge; emits `CollateralClearedEvt`. Returns `NoCollateralToClear` if none exists. |
 
-See [`docs/escrow-sme-collateral.md`](docs/escrow-sme-collateral.md) for the full collateral flow spec.
+| Entrypoint | Description |
+|------------|-------------|
+| `init` | Create an invoice escrow; binds funding token, treasury, optional registry. |
+| `fund` | Record investor principal and atomically pull the funding token from the investor; marks escrow funded when target is met. |
+| `fund_with_commitment` | First deposit with optional lock period (atomically pulling the funding token); selects tiered yield. |
+| `settle` | Mark a funded escrow as settled (SME auth required; maturity enforced). |
+| `withdraw` | SME pulls funded liquidity (accounting record). |
+| `claim_investor_payout` | Investor records a payout claim after settlement. |
+| `sweep_terminal_dust` | Treasury sweeps rounding residue from a terminal escrow. |
+| `migrate` | Schema version gate — **typed errors on all paths** in the current release (codes 90–92). |
+| `set_legal_hold` | Admin activates/clears compliance hold. |
+| `bind_primary_attestation_hash` | Admin sets a single-write 32-byte digest. |
+| `append_attestation_digest` | Admin appends to bounded audit log. |
+| `record_sme_collateral_commitment` | SME records collateral pledge (metadata only). |
+| `get_escrow` | Read current escrow state. |
+| `get_version` | Read stored `DataKey::Version`. |
+
+---
+
+## Storage guardrails
+
+The escrow stores per-investor contribution entries inside the contract
+instance. That map is intentionally bounded.
+
+- Supported investor cardinality: configured via `max_unique_investors` at
+  `init` (optional cap); no hard-coded global max since investor cardinality
+  is escrow-specific.
+- Attestation append log: bounded at `MAX_ATTESTATION_APPEND_ENTRIES = 32`.
+- Dust sweep: capped at `MAX_DUST_SWEEP_AMOUNT = 100_000_000` base units per
+  call.
 
 ---
 
